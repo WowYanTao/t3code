@@ -3,9 +3,10 @@ import {
   MessageId,
   type AssistantCitation,
   type ScopedThreadRef,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { CheckIcon, QuoteIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, MessagesSquareIcon, PlusIcon, QuoteIcon } from "lucide-react";
 import {
   use,
   useEffect,
@@ -25,6 +26,8 @@ import {
   resolveSelectionActionPosition,
   type SelectionActionPoint,
 } from "~/lib/selectionActions";
+import type { SideChatCitationTarget } from "~/lib/sideChatCitations";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { BackgroundThreadContext } from "./backgroundThread";
 
@@ -32,16 +35,27 @@ export function AssistantSelectionToolbar({
   viewport,
   threadRef,
   onCite,
+  resolveSideChatTargets,
+  onSendToSideChat,
 }: {
   viewport: HTMLElement | null;
   threadRef: ScopedThreadRef;
   onCite: (citation: AssistantCitation, sourceAnchor?: AssistantCitationSourceAnchor) => boolean;
+  resolveSideChatTargets?: (() => ReadonlyArray<SideChatCitationTarget>) | undefined;
+  onSendToSideChat?:
+    | ((citation: AssistantCitation, targetThreadId: ThreadId | null) => void)
+    | undefined;
 }) {
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
     position: SelectionActionPoint;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
+  const [sideChatMenu, setSideChatMenu] = useState<{
+    open: boolean;
+    above: boolean;
+    targets: ReadonlyArray<SideChatCitationTarget>;
+  }>({ open: false, above: false, targets: [] });
   const toolbarRef = useRef<HTMLDivElement>(null);
   const citeButtonRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
@@ -60,7 +74,12 @@ export function AssistantSelectionToolbar({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
   useEffect(() => {
     if (!viewport) return;
-    const clear = () => setSelection(null);
+    const clear = () => {
+      setSelection(null);
+      setSideChatMenu((current) =>
+        current.open ? { open: false, above: false, targets: [] } : current,
+      );
+    };
     const update = (pointer: SelectionActionPoint | null) => {
       const nativeSelection = window.getSelection();
       const captured = captureAssistantTextSelection(viewport, nativeSelection);
@@ -131,6 +150,9 @@ export function AssistantSelectionToolbar({
             pointer.y >= line.top - 8 &&
             pointer.y <= line.bottom + 8,
         );
+      setSideChatMenu((current) =>
+        current.open ? { open: false, above: false, targets: [] } : current,
+      );
       setSelection({
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
         citation: {
@@ -190,8 +212,10 @@ export function AssistantSelectionToolbar({
 
   if (!selection) return null;
   const tooLong = selection.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;
+  const sideChatTargets = onSendToSideChat && !tooLong ? (resolveSideChatTargets?.() ?? []) : [];
   const dismiss = () => {
     actionsRef.current?.cancel();
+    setSideChatMenu({ open: false, above: false, targets: [] });
     setSelection(null);
   };
   const cite = () => {
@@ -206,10 +230,35 @@ export function AssistantSelectionToolbar({
     dismiss();
     return true;
   };
+  const sendToSideChat = (targetThreadId: ThreadId | null) => {
+    if (tooLong || !onSendToSideChat) return;
+    onSendToSideChat(selection.citation, targetThreadId);
+    window.getSelection()?.removeAllRanges();
+    dismiss();
+  };
+  const toggleSideChatMenu = () => {
+    if (tooLong || !onSendToSideChat) return;
+    const latestTargets = resolveSideChatTargets?.() ?? [];
+    if (latestTargets.length === 0) {
+      sendToSideChat(null);
+      return;
+    }
+    if (sideChatMenu.open) {
+      setSideChatMenu({ open: false, above: false, targets: [] });
+      return;
+    }
+    const toolbarRect = toolbarRef.current?.getBoundingClientRect();
+    const above = toolbarRect !== undefined && toolbarRect.bottom + 240 > window.innerHeight;
+    setSideChatMenu({ open: true, above, targets: latestTargets });
+  };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     event.stopPropagation();
     if (event.key === "Escape" && !event.nativeEvent.isComposing) {
       event.preventDefault();
+      if (sideChatMenu.open) {
+        setSideChatMenu({ open: false, above: false, targets: [] });
+        return;
+      }
       dismiss();
     }
   };
@@ -242,6 +291,74 @@ export function AssistantSelectionToolbar({
           <CheckIcon aria-hidden="true" className="size-3.5" />
           {gt("Select")}
         </Button>
+      )}
+      {tooLong || !onSendToSideChat ? null : (
+        <div className="relative">
+          <Button
+            type="button"
+            size="xs"
+            variant="glass"
+            aria-label={gt("发送到子会话")}
+            aria-haspopup={sideChatTargets.length > 0 ? "menu" : undefined}
+            aria-expanded={sideChatTargets.length > 0 ? sideChatMenu.open : undefined}
+            onClick={toggleSideChatMenu}
+          >
+            <MessagesSquareIcon aria-hidden="true" className="size-3.5" />
+            {gt("子会话")}
+            {sideChatTargets.length > 0 ? (
+              <ChevronDownIcon
+                aria-hidden="true"
+                className={cn("size-3 transition-transform", sideChatMenu.open && "rotate-180")}
+              />
+            ) : null}
+          </Button>
+          {sideChatMenu.open ? (
+            <div
+              role="menu"
+              aria-label={gt("选择目标子会话")}
+              className={cn(
+                "absolute right-0 z-50 w-56 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg",
+                sideChatMenu.above ? "bottom-full mb-1.5" : "top-full mt-1.5",
+              )}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                onClick={() => sendToSideChat(null)}
+              >
+                <PlusIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{gt("新建子会话")}</span>
+              </button>
+              <div className="my-1 h-px bg-border/60" />
+              <div className="px-2 py-1 text-2xs font-medium text-muted-foreground">
+                {gt("已有子会话")}
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                {sideChatMenu.targets.map((target) => (
+                  <button
+                    key={target.threadId}
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                    onClick={() => sendToSideChat(target.threadId)}
+                  >
+                    <MessagesSquareIcon
+                      aria-hidden="true"
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{target.title}</span>
+                    {target.isActiveInPanel ? (
+                      <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-3xs font-medium text-muted-foreground">
+                        {gt("当前")}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
       )}
     </div>,
     document.body,

@@ -56,7 +56,11 @@ export function useSideChat(input: {
     const error = squashAtomCommandFailure(failure);
     input.onError(thrownErrorMessage(error, m) ?? fallback);
   };
-  const start = async (threadRef: ScopedThreadRef, message: SideChatMessage | undefined) => {
+  const start = async (
+    threadRef: ScopedThreadRef,
+    message: SideChatMessage | undefined,
+    initialDraftPrompt?: string,
+  ): Promise<ScopedThreadRef | null> => {
     const { runtimeMode, modelSelection } = input.readSettings();
     const targetThreadId = newThreadId();
     const fork = await forkSideChat({
@@ -66,7 +70,7 @@ export function useSideChat(input: {
     });
     if (fork._tag === "Failure") {
       reportFailure(fork, m(msg("Could not start a side chat.")));
-      return false;
+      return null;
     }
     // Drops the empty side chat a failed start leaves behind; one that got its message stays.
     const discard = () =>
@@ -78,13 +82,13 @@ export function useSideChat(input: {
     if (!(await waitForThreadShell(targetRef))) {
       input.onError(m(msg("The side chat was created, but it did not reach this client.")));
       discard();
-      return false;
+      return null;
     }
     const sideChat = readThreadShell(targetRef);
     if (sideChat === null) {
       input.onError(m(msg("The side chat is no longer available.")));
       discard();
-      return false;
+      return null;
     }
     if (runtimeMode !== sideChat.runtimeMode) {
       const mode = await setThreadRuntimeMode({
@@ -94,7 +98,7 @@ export function useSideChat(input: {
       if (mode._tag === "Failure") {
         reportFailure(mode, m(msg("Could not set the side chat's permission mode.")));
         discard();
-        return false;
+        return null;
       }
     }
     // Send before showing the tab: closing a tab whose side chat has no run deletes it.
@@ -115,21 +119,40 @@ export function useSideChat(input: {
       if (turn._tag === "Failure") {
         reportFailure(turn, m(msg("Could not send the side chat message.")));
         discard();
-        return false;
+        return null;
       }
-    } else if (modelSelection !== undefined) {
-      useComposerDraftStore.getState().setModelSelection(targetRef, modelSelection);
+    } else {
+      if (modelSelection !== undefined) {
+        useComposerDraftStore.getState().setModelSelection(targetRef, modelSelection);
+      }
+      if (initialDraftPrompt !== undefined) {
+        useComposerDraftStore.getState().setPrompt(targetRef, initialDraftPrompt);
+      }
     }
     useRightPanelStore.getState().openThread(threadRef, targetThreadId);
-    return true;
+    return targetRef;
   };
   const open = async (message?: SideChatMessage) => {
     const { threadRef } = input;
     if (!threadRef || pendingRef.current) return false;
     pendingRef.current = true;
-    return start(threadRef, message).finally(() => {
+    return start(threadRef, message)
+      .then((ref) => ref !== null)
+      .finally(() => {
+        pendingRef.current = false;
+      });
+  };
+  const openWithDraft = async (initialDraftPrompt: string) => {
+    const { threadRef } = input;
+    if (!threadRef || pendingRef.current) return null;
+    pendingRef.current = true;
+    return start(threadRef, undefined, initialDraftPrompt).finally(() => {
       pendingRef.current = false;
     });
   };
-  return { available: input.threadRef !== null, open: useStableCallback(open) };
+  return {
+    available: input.threadRef !== null,
+    open: useStableCallback(open),
+    openWithDraft: useStableCallback(openWithDraft),
+  };
 }

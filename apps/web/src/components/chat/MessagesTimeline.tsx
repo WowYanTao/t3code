@@ -77,6 +77,7 @@ import {
   resolveDisclosureRevealScrollDelta,
 } from "./timelineScrollAnchoring";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
+import type { SideChatCitationTarget } from "~/lib/sideChatCitations";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { type AssistantCitationRequest } from "./AssistantCitationSource";
 import { useAssistantCitationTarget } from "./useAssistantCitationTarget";
@@ -244,6 +245,10 @@ interface MessagesTimelineProps {
     citation: AssistantCitation,
     sourceAnchor?: AssistantCitationSourceAnchor,
   ) => boolean;
+  resolveSideChatTargets?: (() => ReadonlyArray<SideChatCitationTarget>) | undefined;
+  onSendCitationToSideChat?:
+    | ((citation: AssistantCitation, targetThreadId: ThreadId | null) => void)
+    | undefined;
   onReplyToResponse?: TimelineRowSharedState["onReplyToResponse"];
   isWorking: boolean;
   /** The thread is catching up from a cached copy, whose working state may be stale. */
@@ -370,6 +375,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   citationRequest = null,
   citationHistory = CITED_HISTORY_LOADING,
   onCiteAssistantText,
+  resolveSideChatTargets,
+  onSendCitationToSideChat,
   onReplyToResponse,
   isWorking,
   syncing = false,
@@ -1491,6 +1498,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 viewport={timelineViewportElement}
                 threadRef={citationThreadRef}
                 onCite={onCiteAssistantText}
+                resolveSideChatTargets={resolveSideChatTargets}
+                onSendToSideChat={onSendCitationToSideChat}
               />
             ) : null}
             <LegendList<MessagesTimelineRow>

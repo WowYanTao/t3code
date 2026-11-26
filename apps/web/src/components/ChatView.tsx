@@ -225,6 +225,12 @@ import {
   type SideChatParentPanel,
 } from "~/lib/sideChatPane";
 import {
+  appendAssistantCitationToPrompt,
+  registerThreadComposerFocus,
+  requestThreadComposerFocus,
+  resolveSideChatCitationTargets,
+} from "~/lib/sideChatCitations";
+import {
   NO_PROVIDER_MODEL_SELECTION,
   providerInstanceEntriesFor,
   resolveProjectDefaultProviderModelSelection,
@@ -284,6 +290,7 @@ import {
   usePrimaryEnvironment,
 } from "../state/environments";
 import {
+  readThreadShells,
   resolveThreadDetailRef,
   useEnvironmentSupportsServerBrowser,
   useProject,
@@ -2005,6 +2012,14 @@ export default function ChatView(props: ChatViewProps) {
     () => (embedded ? undefined : subscribeSnapShotComposerFocus(focusComposerStable)),
     [embedded, focusComposerStable],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes this thread's composer to cross-pane focus requests (e.g. parent sending a citation to a side chat)
+  useEffect(
+    () =>
+      isServerThread
+        ? registerThreadComposerFocus(routeThreadRef, scheduleComposerFocusStable)
+        : undefined,
+    [isServerThread, routeThreadRef, scheduleComposerFocusStable],
+  );
   const insertArtifactTemplate = (template: CodexArtifactTemplate) => {
     const composer = composerRef.current;
     if (!composer) return;
@@ -3053,6 +3068,43 @@ export default function ChatView(props: ChatViewProps) {
                 ? gt("Available once the thread's worktree is set up.")
                 : null;
   const openSideChatStable = useStableCallback(() => void sideChat.open());
+  const canSendCitationToSideChat =
+    !embedded &&
+    sideChatsOffered &&
+    sideChat.available &&
+    sideChatDisabledReason === null &&
+    activeThreadRef !== null;
+  const resolveSideChatTargetsStable = useStableCallback(() => {
+    if (!canSendCitationToSideChat || activeThreadRef === null) return [];
+    const panelState = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      activeThreadRef,
+    );
+    return resolveSideChatCitationTargets({
+      parentRef: activeThreadRef,
+      threads: readThreadShells(),
+      panelOpen: panelState.isOpen,
+      activeSurfaceId: panelState.activeSurfaceId,
+      panelSurfaces: panelState.surfaces,
+    });
+  });
+  const sendCitationToSideChatStable = useStableCallback(
+    (citation: AssistantCitation, targetThreadId: ThreadId | null) => {
+      if (!canSendCitationToSideChat || activeThreadRef === null) return;
+      if (targetThreadId === null) {
+        void sideChat.openWithDraft(appendAssistantCitationToPrompt("", citation)).then((ref) => {
+          if (ref !== null) requestThreadComposerFocus(ref);
+        });
+        return;
+      }
+      const targetRef = scopeThreadRef(activeThreadRef.environmentId, targetThreadId);
+      const draftStore = useComposerDraftStore.getState();
+      const existingPrompt = draftStore.draftsByThreadKey[scopedThreadKey(targetRef)]?.prompt ?? "";
+      draftStore.setPrompt(targetRef, appendAssistantCitationToPrompt(existingPrompt, citation));
+      useRightPanelStore.getState().openThread(activeThreadRef, targetThreadId);
+      requestThreadComposerFocus(targetRef);
+    },
+  );
   const openSurfaceInMainView = useOpenSurfaceInMainView(activeThreadRef);
   const sendSideChatStable = useStableCallback(sideChat.open);
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
@@ -3664,6 +3716,12 @@ export default function ChatView(props: ChatViewProps) {
                   citationRequest={citationRequest}
                   citationHistory={citationHistory}
                   onCiteAssistantText={citeAssistantTextStable}
+                  {...(canSendCitationToSideChat
+                    ? {
+                        resolveSideChatTargets: resolveSideChatTargetsStable,
+                        onSendCitationToSideChat: sendCitationToSideChatStable,
+                      }
+                    : {})}
                   onReplyToResponse={replyToResponseStable}
                   {...(activeProject && !runsOutsideHostCheckout
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }

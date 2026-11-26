@@ -879,7 +879,9 @@ function useSidebarLookups() {
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const projectGroups = useSidebarProjectGroups();
   const environmentLabelById = new Map(
-    environments.map((environment) => [environment.environmentId, environment.label] as const),
+    environments.length > 1
+      ? environments.map((environment) => [environment.environmentId, environment.label] as const)
+      : [],
   );
   const projectByKey = new Map(
     projects.map((project) => [`${project.environmentId}:${project.id}`, project] as const),

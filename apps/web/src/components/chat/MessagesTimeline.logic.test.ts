@@ -1234,7 +1234,6 @@ describe("deriveMessagesTimelineRows", () => {
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
       "turn-fold:turn-1",
-      "assistant-first-entry",
       "assistant-final-entry",
     ]);
 
@@ -1257,109 +1256,6 @@ describe("deriveMessagesTimelineRows", () => {
     expect(
       expandedRows.find((row) => row.kind === "turn-fold" && row.expanded === true),
     ).toBeDefined();
-  });
-
-  it("keeps non-commentary assistant replies visible across steers and background wakes while folding commentary and tools", () => {
-    const runId = RunId.make("multi-reply-run");
-    const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
-    const assistantMsg = (
-      id: string,
-      second: number,
-      phase?: "commentary" | "partial_answer" | "final_answer",
-    ): TimelineEntry => ({
-      kind: "message",
-      id,
-      createdAt: time(second),
-      message: {
-        id: MessageId.make(id),
-        role: "assistant",
-        text: id,
-        runId,
-        createdAt: time(second),
-        updatedAt: time(second),
-        streaming: false,
-      },
-      ...(phase === undefined
-        ? {}
-        : {
-            projectedItem: {
-              item: {
-                type: "assistant_message",
-                phase,
-                status: "completed",
-                completedAt: DateTime.makeUnsafe(time(second)),
-              },
-            } as never,
-          }),
-    });
-    const work = (id: string, second: number): TimelineEntry => ({
-      kind: "work",
-      id,
-      createdAt: time(second),
-      entry: { id, createdAt: time(second), runId, label: "Ran command", tone: "tool" },
-    });
-
-    const rows = deriveMessagesTimelineRows({
-      timelineEntries: [
-        {
-          kind: "message",
-          id: "prompt-1",
-          createdAt: time(0),
-          message: {
-            id: MessageId.make("prompt-1"),
-            role: "user",
-            text: "First",
-            runId,
-            inputIntent: "turn_start",
-            createdAt: time(0),
-            updatedAt: time(0),
-            streaming: false,
-          },
-        },
-        work("work-1", 2),
-        assistantMsg("commentary-1", 3, "commentary"),
-        assistantMsg("reply-before-steer", 4),
-        {
-          kind: "message",
-          id: "steer-1",
-          createdAt: time(5),
-          message: {
-            id: MessageId.make("steer-1"),
-            role: "user",
-            text: "Follow-up",
-            runId,
-            inputIntent: "steer",
-            createdAt: time(5),
-            updatedAt: time(5),
-            streaming: false,
-          },
-        },
-        work("work-2", 7),
-        assistantMsg("reply-progress", 8),
-        work("work-3", 12),
-        assistantMsg("reply-final", 15),
-      ],
-      latestRun: {
-        runId,
-        status: "completed",
-        startedAt: time(0),
-        completedAt: time(15),
-      },
-      isWorking: false,
-      turnDiffSummaries: [],
-      supportsConversationRollback: false,
-    });
-
-    const segmentKey = RunId.make(`${runId}:steer:steer-1`);
-    expect(rows.map((row) => row.id)).toEqual([
-      "prompt-1",
-      `turn-fold:${runId}`,
-      "reply-before-steer",
-      "steer-1",
-      `turn-fold:${segmentKey}`,
-      "reply-progress",
-      "reply-final",
-    ]);
   });
 
   it.each([1, 2, 3])("folds %i completed activities after the terminal response", (count) => {
@@ -2632,32 +2528,19 @@ describe("deriveMessagesTimelineRows", () => {
         row.kind === "message" ? `${row.message.role}:${row.message.id}` : row.kind,
       );
 
-    expect(rows([message("new-prompt", "user", 20, "run-1")]).slice(0, 5)).toEqual([
+    expect(rows([message("new-prompt", "user", 20, "run-1")]).slice(0, 4)).toEqual([
       "user:imported-prompt",
       "turn-fold",
-      "assistant:imported-update",
       "assistant:imported-answer",
       "user:new-prompt",
     ]);
     const withoutPrompt = rows([]);
     expect(withoutPrompt).toContain("turn-fold");
-    expect(withoutPrompt).toContain("assistant:imported-update");
-    expect(withoutPrompt).not.toContain("work");
+    expect(withoutPrompt).not.toContain("assistant:imported-update");
 
-    const importedCommentary: TimelineEntry = {
-      ...message("imported-update", "assistant", 4),
-      projectedItem: {
-        item: {
-          type: "assistant_message",
-          phase: "commentary",
-          status: "completed",
-          completedAt: DateTime.makeUnsafe(at(4)),
-        },
-      } as never,
-    };
     const timelineEntries = [
       message("imported-prompt", "user", 0),
-      importedCommentary,
+      message("imported-update", "assistant", 4),
       message("imported-answer", "assistant", 8),
     ];
     const foldInput = { timelineEntries, latestRun: null, isWorking: false };
@@ -3090,14 +2973,6 @@ describe("v2 run and attempt history", () => {
         id: "assistant-thought-entry",
         kind: "message" as const,
         createdAt: "2026-01-01T00:00:05Z",
-        projectedItem: {
-          item: {
-            type: "assistant_message",
-            phase: "commentary",
-            status: "completed",
-            completedAt: DateTime.makeUnsafe("2026-01-01T00:00:06Z"),
-          },
-        } as never,
         message: {
           id: "assistant-thought" as never,
           role: "assistant" as const,
@@ -4480,14 +4355,6 @@ describe("linked timeline resources", () => {
         kind: "message" as const,
         id: "intro",
         createdAt: "2026-09-08T10:00:00Z",
-        projectedItem: {
-          item: {
-            type: "assistant_message",
-            phase: "commentary",
-            status: "completed",
-            completedAt: DateTime.makeUnsafe("2026-09-08T10:00:00Z"),
-          },
-        } as never,
         message: {
           id: MessageId.make("intro"),
           role: "assistant" as const,
@@ -4540,27 +4407,10 @@ describe("linked timeline resources", () => {
   });
 
   it("shows a created chat after a steer only when that steer's segment is open", () => {
-    const message = (
-      id: string,
-      role: "user" | "assistant",
-      second: number,
-      commentary = false,
-    ) => ({
+    const message = (id: string, role: "user" | "assistant", second: number) => ({
       kind: "message" as const,
       id,
       createdAt: `2026-09-08T10:00:0${second}Z`,
-      ...(commentary
-        ? {
-            projectedItem: {
-              item: {
-                type: "assistant_message",
-                phase: "commentary",
-                status: "completed",
-                completedAt: DateTime.makeUnsafe(`2026-09-08T10:00:0${second}Z`),
-              },
-            } as never,
-          }
-        : {}),
       message: {
         id: MessageId.make(id),
         role,
@@ -4573,10 +4423,10 @@ describe("linked timeline resources", () => {
       },
     });
     const timelineEntries = [
-      message("intro", "assistant", 0, true),
+      message("intro", "assistant", 0),
       message("steer", "user", 1),
       event("created", "thread_created"),
-      message("after-steer", "assistant", 3, true),
+      message("after-steer", "assistant", 3),
       message("final", "assistant", 4),
     ];
     const segmentKey = RunId.make(`${runId}:steer:steer`);
@@ -5385,7 +5235,6 @@ describe("subagent continued by a later turn", () => {
       "answer-1",
       "prompt-2",
       `turn-fold:${run2}`,
-      "answer-2",
       "closing-2",
     ]);
   });

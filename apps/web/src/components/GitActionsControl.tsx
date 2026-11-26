@@ -190,11 +190,21 @@ interface PendingDefaultBranchAction {
   filePaths?: string[];
 }
 
+interface PendingPrConfirmAction {
+  action: "create_pr" | "commit_push_pr";
+  branchName: string | null;
+  commitMessage?: string;
+  onConfirmed?: () => void;
+  featureBranch?: boolean;
+  filePaths?: string[];
+}
+
 interface RunGitActionWithToastInput {
   action: GitStackedAction;
   commitMessage?: string;
   onConfirmed?: () => void;
   skipDefaultBranchPrompt?: boolean;
+  skipPrConfirm?: boolean;
   statusOverride?: VcsStatusResult | null;
   featureBranch?: boolean;
   filePaths?: string[];
@@ -1039,6 +1049,8 @@ function CheckoutGitActionsControl({
   const [inlineSuccess, setInlineSuccess] = useState<InlineGitActionSuccess | null>(null);
   const [pendingDefaultBranchAction, setPendingDefaultBranchAction] =
     useState<PendingDefaultBranchAction | null>(null);
+  const [pendingPrConfirmAction, setPendingPrConfirmAction] =
+    useState<PendingPrConfirmAction | null>(null);
   const sourceControlScope = { environmentId: activeEnvironmentId, cwd: gitCwd };
   const vcsActionState = useAtomValue(vcsActionManager.stateAtom(sourceControlScope));
   const inlineSuccessExpired = useDeadlinePassed(inlineSuccess?.expiresAtMs ?? null);
@@ -1194,6 +1206,7 @@ function CheckoutGitActionsControl({
     commitMessage,
     onConfirmed,
     skipDefaultBranchPrompt = false,
+    skipPrConfirm = false,
     statusOverride,
     featureBranch = false,
     filePaths,
@@ -1231,6 +1244,17 @@ function CheckoutGitActionsControl({
         includesCommit,
         ...(commitMessage ? { commitMessage } : {}),
         ...(onConfirmed ? { onConfirmed } : {}),
+        ...(filePaths ? { filePaths } : {}),
+      });
+      return false;
+    }
+    if (!skipPrConfirm && (action === "create_pr" || action === "commit_push_pr")) {
+      setPendingPrConfirmAction({
+        action,
+        branchName: actionBranch,
+        ...(commitMessage ? { commitMessage } : {}),
+        ...(onConfirmed ? { onConfirmed } : {}),
+        ...(featureBranch ? { featureBranch } : {}),
         ...(filePaths ? { filePaths } : {}),
       });
       return false;
@@ -1299,6 +1323,22 @@ function CheckoutGitActionsControl({
       ...(filePaths ? { filePaths } : {}),
       featureBranch,
       skipDefaultBranchPrompt: true,
+      skipPrConfirm: true,
+    });
+  };
+
+  const confirmPendingPrAction = () => {
+    if (!pendingPrConfirmAction || !canWriteSourceControl) return;
+    const { action, commitMessage, onConfirmed, featureBranch, filePaths } = pendingPrConfirmAction;
+    setPendingPrConfirmAction(null);
+    void runGitActionWithToast({
+      action,
+      ...(commitMessage ? { commitMessage } : {}),
+      ...(onConfirmed ? { onConfirmed } : {}),
+      ...(featureBranch ? { featureBranch } : {}),
+      ...(filePaths ? { filePaths } : {}),
+      skipDefaultBranchPrompt: true,
+      skipPrConfirm: true,
     });
   };
 
@@ -2036,6 +2076,40 @@ function CheckoutGitActionsControl({
               disabled={!canCreateFeatureBranch || featureBranchUnavailableReason !== null}
             >
               <T>Check out feature branch & continue</T>
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+
+      <Dialog
+        open={pendingPrConfirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingPrConfirmAction(null);
+        }}
+      >
+        <DialogPopup className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingPrConfirmAction?.action === "commit_push_pr"
+                ? gt("确认提交、推送并创建 PR？")
+                : gt("确认创建 PR？")}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingPrConfirmAction?.action === "commit_push_pr"
+                ? gt("将提交当前改动、推送分支 {branch} 并创建 Pull Request。", {
+                    branch: pendingPrConfirmAction.branchName ?? "HEAD",
+                  })
+                : gt("将为分支 {branch} 创建 Pull Request（如有未推送提交会一并推送）。", {
+                    branch: pendingPrConfirmAction?.branchName ?? "HEAD",
+                  })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter variant="bare">
+            <Button variant="outline" size="sm" onClick={() => setPendingPrConfirmAction(null)}>
+              <T>Cancel</T>
+            </Button>
+            <Button size="sm" onClick={confirmPendingPrAction} disabled={!canWriteSourceControl}>
+              {gt("确认创建 PR")}
             </Button>
           </DialogFooter>
         </DialogPopup>

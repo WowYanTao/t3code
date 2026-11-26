@@ -327,7 +327,7 @@ export interface ChatComposerHandle {
   pasteTextAtEnd: (text: string, options?: { bypassAutoAttachment?: boolean }) => boolean;
   citeAssistantText: (
     citation: AssistantCitation,
-    sourceAnchor: AssistantCitationSourceAnchor,
+    sourceAnchor?: AssistantCitationSourceAnchor,
   ) => boolean;
   replyToResponse: (response: ResponseContextRecord) => boolean;
   openModelPicker: () => void;
@@ -3341,7 +3341,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         insertComposerTextStable(
           formatAssistantCitationForComposer(citation, citation.comment),
           "cursor",
-          { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
+          {
+            ensureLeadingBoundary: true,
+            ...(sourceAnchor ? { citationCommentAnchor: sourceAnchor } : {}),
+          },
         ),
       replyToResponse: (response) => {
         // An open question owns the composer, and its answer would not carry the reply.

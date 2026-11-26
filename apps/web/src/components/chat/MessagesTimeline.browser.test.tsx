@@ -1362,6 +1362,34 @@ describe("MessagesTimeline citations", () => {
     await expect
       .element(page.getByRole("button", { name: "Cite selection in composer" }))
       .toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Select" })).toBeVisible();
+  });
+
+  it("inserts a selection directly without opening comment editor when clicking Select", async () => {
+    const text = "Option A: keep assistant replies visible";
+    const citeCalls: Array<{ text: string; hasAnchor: boolean }> = [];
+    await using screen = await renderTimeline(
+      [
+        {
+          id: "sent",
+          kind: "sent-message",
+          createdAt: CREATED_AT,
+          runId: RunId.make("run-select"),
+          text,
+        },
+      ],
+      {
+        onCiteAssistantText: (citation, sourceAnchor) => {
+          citeCalls.push({ text: citation.text, hasAnchor: sourceAnchor !== undefined });
+          return true;
+        },
+      },
+    );
+    await userEvent.tripleClick(screen.getByText(text));
+    const selectButton = page.getByRole("button", { name: "Select" });
+    await expect.element(selectButton).toBeVisible();
+    await selectButton.click();
+    expect(citeCalls).toEqual([{ text, hasAnchor: false }]);
   });
 
   it("lands a citation present at mount under StrictMode", async () => {

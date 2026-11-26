@@ -5,8 +5,15 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
-import { QuoteIcon } from "lucide-react";
-import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { CheckIcon, QuoteIcon } from "lucide-react";
+import {
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   captureAssistantTextSelection,
@@ -28,14 +35,15 @@ export function AssistantSelectionToolbar({
 }: {
   viewport: HTMLElement | null;
   threadRef: ScopedThreadRef;
-  onCite: (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => boolean;
+  onCite: (citation: AssistantCitation, sourceAnchor?: AssistantCitationSourceAnchor) => boolean;
 }) {
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
     position: SelectionActionPoint;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
-  const toolbarRef = useRef<HTMLButtonElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const citeButtonRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
   const gt = useGT();
@@ -163,10 +171,11 @@ export function AssistantSelectionToolbar({
       ) {
         return;
       }
-      if (toolbar.disabled) return;
+      const citeButton = citeButtonRef.current;
+      if (!citeButton || citeButton.disabled) return;
       event.preventDefault();
       event.stopPropagation();
-      toolbar.focus({ preventScroll: true });
+      citeButton.focus({ preventScroll: true });
     };
     // Tab belongs to the foreground chat; a background timeline only follows its selection.
     if (!backgroundThread) document.addEventListener("keydown", focusActions, true);
@@ -191,31 +200,50 @@ export function AssistantSelectionToolbar({
     dismiss();
     return true;
   };
+  const select = () => {
+    if (tooLong || !onCite(selection.citation)) return false;
+    window.getSelection()?.removeAllRanges();
+    dismiss();
+    return true;
+  };
+  const handleKeyDown = (event: ReactKeyboardEvent) => {
+    event.stopPropagation();
+    if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      dismiss();
+    }
+  };
   return createPortal(
-    <Button
+    <div
       ref={toolbarRef}
-      type="button"
-      size="xs"
-      variant="glass"
-      disabled={tooLong}
-      aria-label={tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")}
-      className="fixed z-50 max-w-[calc(100vw-1rem)]"
+      className="fixed z-50 inline-flex max-w-[calc(100vw-1rem)] items-center gap-1"
       style={{ left: selection.position.x, top: selection.position.y }}
       onPointerDown={(event) => event.preventDefault()}
-      onClick={cite}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          dismiss();
-        }
-      }}
+      onKeyDown={handleKeyDown}
     >
-      <QuoteIcon aria-hidden="true" className="size-3.5" />
-      {tooLong
-        ? gt("Shorten selection")
-        : gt("Cite", { $context: "verb, button that quotes the selected text" })}
-    </Button>,
+      <Button
+        ref={citeButtonRef}
+        type="button"
+        size="xs"
+        variant="glass"
+        disabled={tooLong}
+        aria-label={
+          tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")
+        }
+        onClick={cite}
+      >
+        <QuoteIcon aria-hidden="true" className="size-3.5" />
+        {tooLong
+          ? gt("Shorten selection")
+          : gt("Cite", { $context: "verb, button that quotes the selected text" })}
+      </Button>
+      {tooLong ? null : (
+        <Button type="button" size="xs" variant="glass" aria-label={gt("Select")} onClick={select}>
+          <CheckIcon aria-hidden="true" className="size-3.5" />
+          {gt("Select")}
+        </Button>
+      )}
+    </div>,
     document.body,
   );
 }

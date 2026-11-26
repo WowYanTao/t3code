@@ -1,3 +1,35 @@
+<!-- my-custom-rules:start -->
+
+## Personal Fork Rules (`my-custom`)
+
+本仓库是个人日常自用的 T3 Code fork（`origin` 为个人仓库，`upstream` 为官方只读上游），目标是在日常使用 T3 Code 过程中**随手修复痛点、定制顺手特性**，同时尽量保持与上游同步的低成本。以下规则优先于下方通用贡献者规范中的冲突项：
+
+### 分支与改动原则
+
+- **只在 `my-custom` 分支做个人定制**，保持 `main` 干净跟踪 `upstream/main`，方便后续同步上游更新。
+- **最小侵入、易于合并上游**：每个痛点做最小、聚焦、可回退的修改，避免大范围重构无关代码；不要提交无关改动。
+- **数据库 schema / migration 变更必须提前强提醒**：自构建版与官方安装版共享 `~/.t3/userdata`，只要不改数据库 schema 两者就可以随时无缝互切。**任何需求只要涉及到修改数据库 schema、表结构、migration 或不向后兼容的持久化格式，动手前必须先主动提醒用户并说明对官方安装版互通性的影响，经用户明确确认后再改**；同步上游或评估版本差异时如发现官方版改动了表结构，也需提醒用户将 `my-custom` 分支同步合并上游代码。
+- **聚焦当前主力平台（Windows 桌面端：Electron + Web）**：个人体验优化默认以 `apps/desktop`、`apps/web`、`apps/server`、`packages/*` 为主，无需为了个人小改动强行适配 mobile / marketing / 全量多语言翻译或提 PR（除非明确要求）。
+- **先查后改**：遇到使用痛点时，先确认 T3 Code 是否已有现成设置项；确需改代码时，先给出精简改动方案或直接做最小可行实现，并跑受影响文件的针对性单测验证（`vp test run <file>`）。
+
+### 运行与调试工作流（Windows）
+
+- **严禁指向或写入 `~/.t3/userdata`**：开发调试始终保持隔离在 `~/.t3/dev`。
+- **不要从沙箱 Agent 终端直接拉起 Electron GUI 窗口**：Windows 下的沙箱终端（如 Antigravity `exebox`）运行在隐藏桌面，用户看不到窗口且会占用 `t3code-dev` 单实例锁。需要桌面端验证时，提示用户点击 T3 Code 顶部已配置的 **`启动 Electron 开发版`** 脚本按钮，或在用户本机终端运行 `vp run dev:desktop`。
+- **日常自用闭环**：
+  - 实时调试：运行 `vp run dev:desktop`（隔离目录 `%APPDATA%\t3code-dev` + `~/.t3/dev`，与正式版共存，支持 HMR / 自动重启）。
+  - 落盘主力使用：验证满意后，关闭官方安装版，在仓库运行 `vp run build:desktop` + `vp run start:desktop`（复用 `~/.t3/userdata` 与 `%APPDATA%\t3code-v2` 全部数据与登录态，不覆盖安装目录，且非打包模式自动关闭官方自动更新）。
+  - 纯 Web/后端验证：可用 `vp run dev` 在浏览器打开，或运行针对性单元测试。
+
+### 沟通与交互习惯
+
+- **默认使用简体中文回复**，代码、路径、命令与常见技术术语保留英文。
+- **快捷引用（Citation）意图理解**：当用户在回复中仅选中并引用你上一条消息里的某个方案或选项、未附加额外文字或 `comment` 时，若上下文明确是在回复你的选择提问，优先理解为“用户选中了该项”（非破坏性操作可直接按选中项推进；涉及高风险或破坏性动作仍需简短确认）。
+
+<!-- my-custom-rules:end -->
+
+---
+
 # T3 Code
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Kiro, Pi, Muse Code, fx) and serves web, desktop, and mobile clients.

@@ -1070,6 +1070,15 @@ function itemizedFailedRunIds(
   );
 }
 
+function isFoldableAssistantMessage(entry: TimelineEntry): boolean {
+  if (entry.kind !== "message" || entry.message.role !== "assistant") return false;
+  const phase =
+    entry.projectedItem?.item.type === "assistant_message"
+      ? entry.projectedItem.item.phase
+      : undefined;
+  return phase === "commentary" || phase === "partial_answer";
+}
+
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1217,6 +1226,13 @@ function deriveTurnFolds(input: {
       }
       if (entry.kind === "work" && entry.entry.itemType === "notification") continue;
       if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) continue;
+      if (
+        entry.kind === "message" &&
+        entry.message.role === "assistant" &&
+        !isFoldableAssistantMessage(entry)
+      ) {
+        continue;
+      }
       hiddenEntryIds.add(entry.id);
     }
     if (hiddenEntryIds.size === 0) {

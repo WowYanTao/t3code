@@ -1101,6 +1101,55 @@ export function groupSidebarThreadsByProject<
   return folders.filter((folder) => folder.threads.length > 0 || keepEmpty(folder.group));
 }
 
+/**
+ * Limits an expanded project folder to its most recent threads when auto-collapse is on,
+ * while always keeping the currently active route thread visible.
+ */
+export function partitionProjectFolderThreads<TThread>(input: {
+  readonly threads: readonly TThread[];
+  readonly getThreadKey: (thread: TThread) => string;
+  readonly autoCollapseEnabled: boolean;
+  readonly previewLimit: number;
+  readonly tailExpanded: boolean;
+  readonly routeThreadKey: string | null;
+}): {
+  readonly visibleThreads: readonly TThread[];
+  readonly hiddenThreads: readonly TThread[];
+  readonly canCollapseTail: boolean;
+} {
+  const { threads, getThreadKey, autoCollapseEnabled, previewLimit, tailExpanded, routeThreadKey } =
+    input;
+  if (!autoCollapseEnabled || previewLimit <= 0 || threads.length <= previewLimit) {
+    return {
+      visibleThreads: threads,
+      hiddenThreads: [],
+      canCollapseTail: false,
+    };
+  }
+  if (tailExpanded) {
+    return {
+      visibleThreads: threads,
+      hiddenThreads: [],
+      canCollapseTail: true,
+    };
+  }
+  const visibleThreads = threads.slice(0, previewLimit);
+  const visibleKeys = new Set(visibleThreads.map(getThreadKey));
+  if (routeThreadKey !== null && !visibleKeys.has(routeThreadKey)) {
+    const routeThread = threads.find((thread) => getThreadKey(thread) === routeThreadKey);
+    if (routeThread !== undefined) {
+      visibleThreads.push(routeThread);
+      visibleKeys.add(routeThreadKey);
+    }
+  }
+  const hiddenThreads = threads.filter((thread) => !visibleKeys.has(getThreadKey(thread)));
+  return {
+    visibleThreads: hiddenThreads.length === 0 ? threads : visibleThreads,
+    hiddenThreads,
+    canCollapseTail: false,
+  };
+}
+
 export type SidebarV2TopStatusKind =
   | "approval"
   | "done"

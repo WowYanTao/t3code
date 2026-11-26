@@ -185,6 +185,7 @@ import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
   groupSidebarThreadsByProject,
+  partitionProjectFolderThreads,
   sidebarFolderExpansionKeys,
   buildBulkTitleRegenerationContextMenuItem,
   buildBulkUnpinContextMenuItem,
@@ -461,6 +462,13 @@ function useSidebarThreads(input: {
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
     useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+  const projectThreadAutoCollapseEnabled = useClientSettings(
+    (s) => s.sidebarProjectThreadAutoCollapseEnabled,
+  );
+  const projectThreadPreviewLimit = useClientSettings((s) => s.sidebarProjectThreadPreviewLimit);
+  const [expandedProjectTailKeys, setExpandedProjectTailKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
@@ -550,16 +558,34 @@ function useSidebarThreads(input: {
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
           );
+          if (collapsed) {
+            return {
+              group: folder.group,
+              collapsed,
+              // A closed folder still shows the open thread, and hints at the rest.
+              threads: routeThreadOnly(folder.threads, routeRowThreadKey),
+              hiddenThreads: folder.threads.filter(
+                (thread) => threadShellKey(thread) !== routeRowThreadKey,
+              ),
+              hiddenTailThreads: EMPTY_THREADS,
+              canCollapseTail: false,
+            };
+          }
+          const partitioned = partitionProjectFolderThreads({
+            threads: folder.threads,
+            getThreadKey: threadShellKey,
+            autoCollapseEnabled: projectThreadAutoCollapseEnabled,
+            previewLimit: projectThreadPreviewLimit,
+            tailExpanded: expandedProjectTailKeys.has(folder.group.projectKey),
+            routeThreadKey: routeRowThreadKey,
+          });
           return {
             group: folder.group,
             collapsed,
-            // A closed folder still shows the open thread, and hints at the rest.
-            threads: collapsed
-              ? routeThreadOnly(folder.threads, routeRowThreadKey)
-              : folder.threads,
-            hiddenThreads: collapsed
-              ? folder.threads.filter((thread) => threadShellKey(thread) !== routeRowThreadKey)
-              : EMPTY_THREADS,
+            threads: partitioned.visibleThreads,
+            hiddenThreads: EMPTY_THREADS,
+            hiddenTailThreads: partitioned.hiddenThreads,
+            canCollapseTail: partitioned.canCollapseTail,
           };
         });
   const orderedThreads = [
@@ -610,7 +636,27 @@ function useSidebarThreads(input: {
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
-      setProjectExpanded(keys, !resolveProjectExpanded(projectExpandedById, keys));
+      const nextExpanded = !resolveProjectExpanded(projectExpandedById, keys);
+      setProjectExpanded(keys, nextExpanded);
+      if (!nextExpanded) {
+        setExpandedProjectTailKeys((current) => {
+          if (!current.has(group.projectKey)) return current;
+          const next = new Set(current);
+          next.delete(group.projectKey);
+          return next;
+        });
+      }
+    },
+    toggleProjectFolderTail: (projectKey: string) => {
+      setExpandedProjectTailKeys((current) => {
+        const next = new Set(current);
+        if (next.has(projectKey)) {
+          next.delete(projectKey);
+        } else {
+          next.add(projectKey);
+        }
+        return next;
+      });
     },
     renderedSettledThreads,
     visibleSnoozedThreads,
@@ -1357,6 +1403,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     toggleWorkingShelf,
     projectFolders,
     toggleProjectFolder,
+    toggleProjectFolderTail,
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
@@ -3672,6 +3719,42 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                   "active",
                                   sidebarFolderRowId(folder.group.projectKey),
                                 ),
+                              );
+                            }
+                            if (
+                              !folder.collapsed &&
+                              (folder.hiddenTailThreads.length > 0 || folder.canCollapseTail)
+                            ) {
+                              const hiddenCount = folder.hiddenTailThreads.length;
+                              items.push(
+                                <li
+                                  key={`project-folder-tail:${folder.group.projectKey}`}
+                                  className="list-none"
+                                >
+                                  <button
+                                    type="button"
+                                    data-sidebar-row={`folder-tail:${folder.group.projectKey}`}
+                                    data-sidebar-parent={sidebarFolderRowId(
+                                      folder.group.projectKey,
+                                    )}
+                                    onClick={() => toggleProjectFolderTail(folder.group.projectKey)}
+                                    className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) ps-9 pe-2.5 text-left text-xs text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                  >
+                                    <ChevronDownIcon
+                                      aria-hidden
+                                      className={cn(
+                                        "size-3.5 shrink-0 transition-transform",
+                                        hiddenCount === 0 && "rotate-180",
+                                      )}
+                                    />
+                                    {hiddenCount > 0
+                                      ? gt(
+                                          "{count, plural, one {Show {count} more} other {Show {count} more}}",
+                                          { count: hiddenCount },
+                                        )
+                                      : gt("Show less")}
+                                  </button>
+                                </li>,
                               );
                             }
                           }

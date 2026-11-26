@@ -20,7 +20,9 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MAX_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
   SidebarProjectSortOrder,
@@ -90,8 +92,10 @@ import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
+import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { commitNumberFieldOnEnter } from "./commitNumberFieldOnEnter";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -547,6 +551,14 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? [gt("Working section")]
       : []),
+    ...(settings.sidebarProjectThreadAutoCollapseEnabled !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadAutoCollapseEnabled
+      ? [gt("自动折叠项目会话")]
+      : []),
+    ...(settings.sidebarProjectThreadPreviewLimit !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadPreviewLimit
+      ? [gt("保留最近会话数")]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? [gt("Auto-settle inactive threads")]
       : []),
@@ -739,6 +751,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarProjectThreadAutoCollapseEnabled:
+        DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadAutoCollapseEnabled,
+      sidebarProjectThreadPreviewLimit: DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadPreviewLimit,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -985,6 +1000,87 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...setting("project-thread-auto-collapse")}
+          description={gt(
+            "展开项目文件夹时只保留最近的一部分会话，其余折叠到展开按钮中；当前打开的会话始终保留显示。",
+          )}
+          resetAction={
+            settings.sidebarProjectThreadAutoCollapseEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadAutoCollapseEnabled ? (
+              <SettingResetButton
+                ariaLabel={gt("重置项目会话自动折叠设置")}
+                onClick={() =>
+                  updateSettings({
+                    sidebarProjectThreadAutoCollapseEnabled:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadAutoCollapseEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarProjectThreadAutoCollapseEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarProjectThreadAutoCollapseEnabled: Boolean(checked) })
+              }
+              aria-label={gt("自动折叠项目会话")}
+            />
+          }
+        >
+          {settings.sidebarProjectThreadAutoCollapseEnabled ? (
+            <div className="mt-2 mb-2 border-l-2 border-border/60 ps-3">
+              <SettingsRow
+                {...setting("project-thread-preview-limit")}
+                className="px-0 py-2 sm:px-0"
+                description={gt("每个项目文件夹默认展示的最近会话数量（其余点击展开）。")}
+                resetAction={
+                  settings.sidebarProjectThreadPreviewLimit !==
+                  DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadPreviewLimit ? (
+                    <SettingResetButton
+                      ariaLabel={gt("重置保留最近会话数")}
+                      onClick={() =>
+                        updateSettings({
+                          sidebarProjectThreadPreviewLimit:
+                            DEFAULT_UNIFIED_SETTINGS.sidebarProjectThreadPreviewLimit,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <div className="w-24">
+                    <NumberField
+                      value={settings.sidebarProjectThreadPreviewLimit}
+                      min={MIN_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT}
+                      max={MAX_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT}
+                      format={{ useGrouping: false }}
+                      size="sm"
+                      onValueCommitted={(value) => {
+                        if (
+                          value === null ||
+                          !Number.isInteger(value) ||
+                          value === settings.sidebarProjectThreadPreviewLimit
+                        ) {
+                          return;
+                        }
+                        updateSettings({ sidebarProjectThreadPreviewLimit: value });
+                      }}
+                    >
+                      <NumberFieldGroup>
+                        <NumberFieldInput
+                          aria-label={gt("保留最近会话数")}
+                          onKeyDown={commitNumberFieldOnEnter}
+                        />
+                      </NumberFieldGroup>
+                    </NumberField>
+                  </div>
+                }
+              />
+            </div>
+          ) : null}
+        </SettingsRow>
       </SettingsSection>
 
       <SettingsSection id="confirmations" title={gt("Confirmations")}>

@@ -37,6 +37,7 @@ import {
   type SidebarSection,
   resolveSidebarDropVerb,
   groupSidebarThreadsByProject,
+  partitionProjectFolderThreads,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
   withoutRemovedCheckout,
@@ -1725,6 +1726,100 @@ describe("groupSidebarThreadsByProject", () => {
       { projectKey: "t3code", threads: ["a", "b"] },
       { projectKey: "fleet", threads: [] },
     ]);
+  });
+});
+
+describe("partitionProjectFolderThreads", () => {
+  const threads = [
+    { key: "t1" },
+    { key: "t2" },
+    { key: "t3" },
+    { key: "t4" },
+    { key: "t5" },
+    { key: "t6" },
+    { key: "t7" },
+  ];
+  const getThreadKey = (thread: { key: string }) => thread.key;
+
+  it("shows all threads when auto-collapse is disabled or list fits within previewLimit", () => {
+    expect(
+      partitionProjectFolderThreads({
+        threads,
+        getThreadKey,
+        autoCollapseEnabled: false,
+        previewLimit: 5,
+        tailExpanded: false,
+        routeThreadKey: null,
+      }),
+    ).toEqual({
+      visibleThreads: threads,
+      hiddenThreads: [],
+      canCollapseTail: false,
+    });
+
+    expect(
+      partitionProjectFolderThreads({
+        threads: threads.slice(0, 5),
+        getThreadKey,
+        autoCollapseEnabled: true,
+        previewLimit: 5,
+        tailExpanded: false,
+        routeThreadKey: null,
+      }),
+    ).toEqual({
+      visibleThreads: threads.slice(0, 5),
+      hiddenThreads: [],
+      canCollapseTail: false,
+    });
+  });
+
+  it("folds threads past previewLimit while keeping the active route thread visible", () => {
+    const folded = partitionProjectFolderThreads({
+      threads,
+      getThreadKey,
+      autoCollapseEnabled: true,
+      previewLimit: 3,
+      tailExpanded: false,
+      routeThreadKey: "t6",
+    });
+    expect(folded.visibleThreads.map(getThreadKey)).toEqual(["t1", "t2", "t3", "t6"]);
+    expect(folded.hiddenThreads.map(getThreadKey)).toEqual(["t4", "t5", "t7"]);
+    expect(folded.canCollapseTail).toBe(false);
+
+    // When the only thread beyond previewLimit is the active route thread, nothing stays hidden.
+    const singleOverflowActive = partitionProjectFolderThreads({
+      threads: threads.slice(0, 4),
+      getThreadKey,
+      autoCollapseEnabled: true,
+      previewLimit: 3,
+      tailExpanded: false,
+      routeThreadKey: "t4",
+    });
+    expect(singleOverflowActive.visibleThreads.map(getThreadKey)).toEqual(["t1", "t2", "t3", "t4"]);
+    expect(singleOverflowActive.hiddenThreads).toEqual([]);
+    expect(singleOverflowActive.canCollapseTail).toBe(false);
+  });
+
+  it("shows all threads and allows collapsing back when tailExpanded is true", () => {
+    const expanded = partitionProjectFolderThreads({
+      threads,
+      getThreadKey,
+      autoCollapseEnabled: true,
+      previewLimit: 3,
+      tailExpanded: true,
+      routeThreadKey: null,
+    });
+    expect(expanded.visibleThreads.map(getThreadKey)).toEqual([
+      "t1",
+      "t2",
+      "t3",
+      "t4",
+      "t5",
+      "t6",
+      "t7",
+    ]);
+    expect(expanded.hiddenThreads).toEqual([]);
+    expect(expanded.canCollapseTail).toBe(true);
   });
 });
 

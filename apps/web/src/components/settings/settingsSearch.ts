@@ -507,6 +507,25 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("hide fold running monitoring threads inbox sidebar shelf")],
   },
   {
+    id: "project-thread-auto-collapse",
+    title: msg("自动折叠项目会话"),
+    to: "/settings/general",
+    searchTerms: [
+      msg(
+        "auto collapse fold project threads limit recent sidebar boring 自动折叠 折叠 项目 会话 列表",
+      ),
+    ],
+  },
+  {
+    id: "project-thread-preview-limit",
+    title: msg("保留最近会话数"),
+    to: "/settings/general",
+    targetId: "project-thread-auto-collapse",
+    searchTerms: [
+      msg("auto collapse fold project threads count limit recent sidebar 折叠 保留 最近 会话 数量"),
+    ],
+  },
+  {
     id: "boring-sidebar",
     title: msg("Boring sidebar (group by project)"),
     to: "/settings/labs",

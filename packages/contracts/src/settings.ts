@@ -197,6 +197,17 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
+export const MIN_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT = 1;
+export const MAX_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT = 50;
+const DEFAULT_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT = 5;
+export const SidebarProjectThreadPreviewLimit = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT,
+    maximum: MAX_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT,
+  }),
+);
+export type SidebarProjectThreadPreviewLimit = typeof SidebarProjectThreadPreviewLimit.Type;
+
 // "artwork" follows the running channel and shows nothing on Latest. The fixed artwork
 // modes let any channel opt into a specific channel's art.
 export const EnvironmentIdentificationMode = Schema.Literals([
@@ -563,6 +574,12 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidebarProjectThreadAutoCollapseEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  sidebarProjectThreadPreviewLimit: SidebarProjectThreadPreviewLimit.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_THREAD_PREVIEW_LIMIT)),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -2167,6 +2184,8 @@ export const ClientSettingsPatch = Schema.Struct({
   threadDetailsUsageEnabled: Schema.optionalKey(Schema.Boolean),
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarProjectThreadAutoCollapseEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarProjectThreadPreviewLimit: Schema.optionalKey(SidebarProjectThreadPreviewLimit),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

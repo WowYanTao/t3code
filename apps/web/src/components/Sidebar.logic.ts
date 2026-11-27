@@ -1131,6 +1131,23 @@ export function orderProjectFolderThreads<TThread>(input: {
   return [...pinned.map((entry) => entry.thread), ...rest];
 }
 
+export function reorderProjectPinnedThreadKeys(input: {
+  readonly pinnedKeys: readonly string[];
+  readonly activeKey: string;
+  readonly overKey: string;
+}): string[] | null {
+  const { pinnedKeys, activeKey, overKey } = input;
+  if (activeKey === overKey) return null;
+  const fromIndex = pinnedKeys.indexOf(activeKey);
+  const toIndex = pinnedKeys.indexOf(overKey);
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return null;
+  const next = [...pinnedKeys];
+  const [moved] = next.splice(fromIndex, 1);
+  if (moved === undefined) return null;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
 /**
  * Limits an expanded project folder to its most recent threads when auto-collapse is on,
  * while always keeping project-pinned threads and the currently active route thread visible.

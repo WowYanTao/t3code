@@ -39,6 +39,7 @@ import {
   groupSidebarThreadsByProject,
   orderProjectFolderThreads,
   partitionProjectFolderThreads,
+  reorderProjectPinnedThreadKeys,
   planProjectFolderReorder,
   projectFolderBucket,
   resolveSidebarFolderDot,
@@ -1868,6 +1869,40 @@ describe("partitionProjectFolderThreads", () => {
       "t4",
     ]);
     expect(morePinnedThanLimit.hiddenThreads.map(getThreadKey)).toEqual(["t6"]);
+  });
+
+  it("reorders project-pinned thread keys while leaving other projects' keys intact", () => {
+    expect(
+      reorderProjectPinnedThreadKeys({
+        pinnedKeys: ["p1", "other", "p2", "p3"],
+        activeKey: "p1",
+        overKey: "p3",
+      }),
+    ).toEqual(["other", "p2", "p3", "p1"]);
+
+    expect(
+      reorderProjectPinnedThreadKeys({
+        pinnedKeys: ["p1", "other", "p2", "p3"],
+        activeKey: "p3",
+        overKey: "p1",
+      }),
+    ).toEqual(["p3", "p1", "other", "p2"]);
+
+    expect(
+      reorderProjectPinnedThreadKeys({
+        pinnedKeys: ["p1", "p2"],
+        activeKey: "p1",
+        overKey: "p1",
+      }),
+    ).toBeNull();
+
+    expect(
+      reorderProjectPinnedThreadKeys({
+        pinnedKeys: ["p1", "p2"],
+        activeKey: "p1",
+        overKey: "missing",
+      }),
+    ).toBeNull();
   });
 });
 

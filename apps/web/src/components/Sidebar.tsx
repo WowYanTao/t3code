@@ -4278,38 +4278,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         {"暂无运行中或待办会话"}
                       </li>
                     ) : (
-                      <>
-                        {attentionPartition.runningThreads.length > 0 ? (
-                          <>
-                            <li className="flex list-none items-center justify-between px-2.5 pt-1 pb-0.5 text-2xs font-medium text-muted-foreground">
-                              <span>{gt("Working", { $context: "thread status" })}</span>
-                              <span className="tabular-nums">
-                                {attentionPartition.runningThreads.length}
-                              </span>
-                            </li>
-                            {attentionPartition.runningThreads.map(renderAttentionPopoverRow)}
-                          </>
-                        ) : null}
-                        {attentionPartition.todoThreads.length > 0 ? (
-                          <>
-                            <li
-                              className={cn(
-                                "flex list-none items-center justify-between px-2.5 pb-0.5 text-2xs font-medium text-muted-foreground",
-                                attentionPartition.runningThreads.length > 0 ? "pt-2.5" : "pt-1",
-                              )}
-                            >
-                              <span>
-                                {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork sidebar attention hub */}
-                                {"待办"}
-                              </span>
-                              <span className="tabular-nums">
-                                {attentionPartition.todoThreads.length}
-                              </span>
-                            </li>
-                            {attentionPartition.todoThreads.map(renderAttentionPopoverRow)}
-                          </>
-                        ) : null}
-                      </>
+                      [...attentionPartition.runningThreads, ...attentionPartition.todoThreads].map(
+                        renderAttentionPopoverRow,
+                      )
                     )}
                   </ul>
                 </ScrollArea>

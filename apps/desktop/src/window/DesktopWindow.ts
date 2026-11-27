@@ -170,6 +170,30 @@ function getIconOption(
   });
 }
 
+function applyWindowsTaskbarIdentity(
+  window: Electron.BrowserWindow,
+  iconPaths: DesktopAssets.DesktopIconPaths,
+  environment: DesktopEnvironment.DesktopEnvironment["Service"],
+): void {
+  if (environment.platform !== "win32" || Option.isNone(iconPaths.ico)) {
+    return;
+  }
+  const icoPath = iconPaths.ico.value;
+  if (typeof window.setIcon === "function") {
+    window.setIcon(icoPath);
+  }
+  if (!environment.isPackaged && typeof window.setAppDetails === "function") {
+    const mainEntryPath = environment.path.join(environment.dirname, "main.cjs");
+    window.setAppDetails({
+      appId: environment.appUserModelId,
+      appIconPath: icoPath,
+      appIconIndex: 0,
+      relaunchCommand: `"${process.execPath}" "${mainEntryPath}"`,
+      relaunchDisplayName: environment.isDevelopment ? "Tao Code (Dev)" : "Tao Code",
+    });
+  }
+}
+
 function getInitialWindowBackgroundColor(shouldUseDarkColors: boolean): string {
   return shouldUseDarkColors ? "#000000" : "#ffffff";
 }
@@ -518,6 +542,7 @@ export const make = Effect.gen(function* () {
       return Option.none();
     }
 
+    applyWindowsTaskbarIdentity(window, iconPaths, environment);
     pendingMainReveals.set(window, Effect.void);
     yield* rendererHistory.register(window.webContents, { surface: "main" });
     if (environment.platform === "darwin") {
@@ -1134,6 +1159,8 @@ export const make = Effect.gen(function* () {
     const existingWindow = yield* electronWindow.currentMainOrFirst;
     if (Option.isSome(existingWindow)) return;
 
+    const iconPaths = yield* assets.iconPaths;
+    const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
     if (yield* Ref.get(desktopState.quitting)) return;
     const splash = yield* electronWindow.create({
@@ -1148,6 +1175,7 @@ export const make = Effect.gen(function* () {
       show: false,
       skipTaskbar: false,
       backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      ...iconOption,
       title: environment.displayName,
       webPreferences: {
         contextIsolation: true,
@@ -1159,6 +1187,7 @@ export const make = Effect.gen(function* () {
       yield* electronWindow.destroyAll;
       return;
     }
+    applyWindowsTaskbarIdentity(splash, iconPaths, environment);
     yield* rendererHistory.register(splash.webContents, { surface: "splash" });
     yield* Ref.set(splashWindowRef, Option.some(splash));
     let renderedUrl: string | undefined;

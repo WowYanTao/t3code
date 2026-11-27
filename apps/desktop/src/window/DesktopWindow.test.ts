@@ -131,9 +131,11 @@ function makeFakeBrowserWindow() {
       windowListeners.set(eventName, listener);
     }),
     restore: vi.fn(),
+    setAppDetails: vi.fn(),
     setBackgroundColor: vi.fn(),
     setAutoHideCursor: vi.fn(),
     setFullScreen: vi.fn(),
+    setIcon: vi.fn(),
     setOpacity: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
@@ -155,6 +157,8 @@ function makeFakeBrowserWindow() {
     openDevTools: webContents.openDevTools,
     reload: webContents.reload,
     reloadIgnoringCache: webContents.reloadIgnoringCache,
+    setAppDetails: window.setAppDetails,
+    setIcon: window.setIcon,
     toggleDevTools: webContents.toggleDevTools,
     navigationHistory: webContents.navigationHistory,
     setIgnoreMenuShortcuts: webContents.setIgnoreMenuShortcuts,
@@ -257,6 +261,7 @@ function layerTest(input: {
   readonly focusedWindow?: Electron.BrowserWindow;
   readonly fallbackWindow?: Electron.BrowserWindow;
   readonly platform?: NodeJS.Platform;
+  readonly iconPaths?: DesktopAssets.DesktopIconPaths;
   readonly appearanceWindows?: ReadonlyArray<{
     readonly window: Electron.BrowserWindow;
     readonly titleBarOverlay: boolean;
@@ -332,10 +337,18 @@ function layerTest(input: {
           ),
   } satisfies ElectronWindow.ElectronWindow["Service"]);
 
+  const resolvedAssetsLayer =
+    input.iconPaths === undefined
+      ? layerDesktopAssets
+      : Layer.succeed(DesktopAssets.DesktopAssets, {
+          iconPaths: Effect.succeed(input.iconPaths),
+          resolveResourcePath: () => Effect.succeed(Option.none<string>()),
+        } satisfies DesktopAssets.DesktopAssets["Service"]);
+
   return DesktopWindow.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        layerDesktopAssets,
+        resolvedAssetsLayer,
         Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
           register: () => Effect.void,
           recordMetrics: () => Effect.void,
@@ -1842,6 +1855,39 @@ describe("DesktopWindow", () => {
         assert.equal(yield* Ref.get(createCount), 1);
         assert.equal(fakeWindow.send.mock.calls.length, 0);
         assert.equal(onReveal.mock.calls.length, 0);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("applies Windows taskbar icon and app details on unpackaged win32 windows", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const icoPath = "D:\\repo\\assets\\custom\\tao-black-windows.ico";
+      const layer = layerTest({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        platform: "win32",
+        iconPaths: {
+          ico: Option.some(icoPath),
+          icns: Option.none(),
+          png: Option.none(),
+        },
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+
+        assert.deepEqual(fakeWindow.setIcon.mock.calls, [[icoPath]]);
+        assert.equal(fakeWindow.setAppDetails.mock.calls.length, 1);
+        const details = fakeWindow.setAppDetails.mock.calls[0]?.[0];
+        assert.equal(details?.appId, "com.t3tools.t3code.dev");
+        assert.equal(details?.appIconPath, icoPath);
+        assert.equal(details?.appIconIndex, 0);
+        assert.equal(details?.relaunchDisplayName, "Tao Code (Dev)");
       }).pipe(Effect.provide(layer));
     }),
   );

@@ -74,11 +74,11 @@ const sourceTreeIconFileNames = {
   },
 } as const;
 
-function resolveSourceTreeIconPath(
+function resolveSourceTreeIconPaths(
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
   ext: keyof DesktopIconPaths,
-): string | undefined {
-  if (environment.isPackaged || ext === "icns") return undefined;
+): readonly string[] {
+  if (environment.isPackaged || ext === "icns") return [];
   const brand = environment.isDevelopment ? "dev" : "prod";
   const fileNames = sourceTreeIconFileNames[brand];
   const fileName =
@@ -87,7 +87,14 @@ function resolveSourceTreeIconPath(
       : environment.platform === "darwin"
         ? fileNames.macPng
         : fileNames.universalPng;
-  return environment.path.join(environment.rootDir, "assets", brand, fileName);
+  const standardPath = environment.path.join(environment.rootDir, "assets", brand, fileName);
+  if (!environment.isDevelopment && ext === "ico") {
+    return [
+      environment.path.join(environment.rootDir, "assets", "custom", "tao-black-windows.ico"),
+      standardPath,
+    ];
+  }
+  return [standardPath];
 }
 
 const resolveIconPath = Effect.fn("desktop.assets.resolveIconPath")(function* (
@@ -99,8 +106,7 @@ const resolveIconPath = Effect.fn("desktop.assets.resolveIconPath")(function* (
 > {
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const sourceTreeIconPath = resolveSourceTreeIconPath(environment, ext);
-  if (sourceTreeIconPath !== undefined) {
+  for (const sourceTreeIconPath of resolveSourceTreeIconPaths(environment, ext)) {
     const sourceTreeIconExists = yield* fileSystem.exists(sourceTreeIconPath).pipe(
       Effect.mapError(
         (cause) =>

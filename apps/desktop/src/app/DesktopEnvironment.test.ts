@@ -70,6 +70,15 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(development.stateDir, "/Users/alice/.t3/dev");
       assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.appUserModelId, "com.t3tools.t3code.dev");
+      assert.equal(production.appUserModelId, "com.taocode.desktop");
+    }),
+  );
+
+  it.effect("keeps packaged Windows production AppUserModelId unchanged", () =>
+    Effect.gen(function* () {
+      const packaged = yield* makeEnvironment({ platform: "win32", isPackaged: true });
+      assert.equal(packaged.appUserModelId, "com.t3tools.t3code");
     }),
   );
 });

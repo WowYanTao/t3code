@@ -52,6 +52,7 @@ import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { getClientSettings, updateClientSettings, useClientSettings } from "./useSettings";
+import { toggleSidebarTodoThread } from "../sidebarTodo";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
@@ -128,6 +129,7 @@ export function useThreadActionMenu(input: {
     const clientSettings = getClientSettings();
     const threadKey = scopedThreadKey(threadRef);
     const isProjectPinned = clientSettings.sidebarProjectPinnedThreadKeys.includes(threadKey);
+    const isTodo = clientSettings.sidebarTodoThreadKeys.includes(threadKey);
     const supports = {
       settlement: configLoaded,
       autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
@@ -147,6 +149,7 @@ export function useThreadActionMenu(input: {
       projectFilter: null,
       isPinned: thread.pinnedAt != null,
       isProjectPinned,
+      isTodo,
       isSettled: supports.settlement && thread.settledOverride === "settled",
       autoSettleEnabled: thread.autoSettleDisabledAt == null,
       isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
@@ -282,6 +285,10 @@ export function useThreadActionMenu(input: {
           }
           return;
         }
+        case "add-todo":
+        case "remove-todo":
+          toggleSidebarTodoThread(threadKey);
+          return;
         case "auto-settle:enabled":
         case "auto-settle:disabled":
           await reportFailure(m(msg("Failed to update auto-settle")), () =>

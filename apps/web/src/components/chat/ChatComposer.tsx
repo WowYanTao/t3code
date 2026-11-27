@@ -252,11 +252,13 @@ import { observeResize } from "~/lib/observeResize";
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
 import { toastManager } from "../ui/toast";
 import { m as resolveMessage } from "../../i18n/messages";
-import { BuildingIcon, PlayIcon, ReplyIcon } from "lucide-react";
+import { BookmarkIcon, BuildingIcon, PlayIcon, ReplyIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { assistantCitationLabel } from "@t3tools/shared/assistantCitations";
 import { assistantCitationNavigation } from "../../lib/assistantCitationNavigation";
+import { toggleSidebarTodoThread } from "../../sidebarTodo";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Spinner } from "../ui/spinner";
 import { useManagedPolicy } from "../../state/managedPolicy";
 import { hasProviderSetup } from "./ProviderStatusBanner";
@@ -3631,6 +3633,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerAttachButton = showComposerAttachAction ? (
     <ComposerAttachButton onOpenPicker={() => composerAttachInputRef.current?.click()} />
   ) : null;
+  const activeTodoThreadKey =
+    routeKind === "server" && activeThreadId != null
+      ? scopedThreadKey(scopeThreadRef(environmentId, activeThreadId))
+      : null;
+  const isActiveThreadManualTodo =
+    activeTodoThreadKey !== null && settings.sidebarTodoThreadKeys.includes(activeTodoThreadKey);
+  const composerTodoButton =
+    activeTodoThreadKey !== null ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant={isActiveThreadManualTodo ? "warning-outline" : "ghost"}
+              size="icon-sm"
+              aria-pressed={isActiveThreadManualTodo}
+              // oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo button
+              aria-label={isActiveThreadManualTodo ? "移出运行 / 待办" : "加入运行 / 待办"}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => {
+                toggleSidebarTodoThread(activeTodoThreadKey);
+              }}
+            />
+          }
+        >
+          <BookmarkIcon className={cn(isActiveThreadManualTodo && "fill-current")} />
+        </TooltipTrigger>
+        <TooltipPopup>
+          {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo tooltip */}
+          {isActiveThreadManualTodo ? "移出运行 / 待办" : "加入运行 / 待办"}
+        </TooltipPopup>
+      </Tooltip>
+    ) : null;
   return (
     <form
       ref={composerFormRef}
@@ -4060,8 +4095,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     "hidden sm:flex",
                 )}
               >
-                {composerAttachButton && !dictationTakesFooter ? (
-                  <div className="me-2">{composerAttachButton}</div>
+                {(composerAttachButton || composerTodoButton) && !dictationTakesFooter ? (
+                  <div className="me-2 flex items-center gap-0.5">
+                    {composerAttachButton}
+                    {composerTodoButton}
+                  </div>
                 ) : null}
                 <div
                   data-chat-composer-actions="right"

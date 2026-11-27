@@ -42,6 +42,7 @@ import {
   AlarmClockIcon,
   AlarmClockOffIcon,
   ArrowRightLeftIcon,
+  BookmarkIcon,
   CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
@@ -593,6 +594,7 @@ const TOP_STATUS_ICONS = {
   failed: CircleAlertIcon,
   done: CircleCheckIcon,
   woke: AlarmClockIcon,
+  todo: BookmarkIcon,
 } as const;
 
 function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: string }) {
@@ -606,6 +608,7 @@ type SidebarThreadRowProps = {
   // "folder-multiline" adds the card's environment and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
   showSlimStatus?: boolean | undefined;
+  isManualTodo?: boolean | undefined;
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -656,6 +659,7 @@ type SidebarThreadRowProps = {
   onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
+  onToggleTodo?: ((threadRef: ScopedThreadRef) => void) | undefined;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
   onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
 };
@@ -722,6 +726,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onUnsettle,
     onUnsnooze,
     onUnpin,
+    onToggleTodo,
     readOpensPullRequestsInRightPanel,
     renamingTitle,
     thread,
@@ -808,13 +813,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     wokeAtDate !== null &&
     (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
     thread.settledOverride !== "settled";
-  const shouldRecede = shouldRecedeSidebarThread({
-    status,
-    isUnread,
-    isWoke,
-    isActive: props.isActive,
-    isSelected,
-  });
+  const isManualTodo = props.isManualTodo === true;
+  const shouldRecede =
+    !isManualTodo &&
+    shouldRecedeSidebarThread({
+      status,
+      isUnread,
+      isWoke,
+      isActive: props.isActive,
+      isSelected,
+    });
   const topStatus =
     status === "preparing" || status === "working"
       ? {
@@ -875,7 +883,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           icon: "done" as const,
                           className: "text-success-foreground",
                         }
-                      : null;
+                      : isManualTodo
+                        ? {
+                            // oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo status
+                            label: "待办",
+                            icon: "todo" as const,
+                            className: "text-warning-foreground",
+                          }
+                        : null;
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -994,6 +1009,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     event.preventDefault();
     event.stopPropagation();
     onUnpin(threadRef);
+  };
+  const handleToggleTodoClick = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onToggleTodo?.(threadRef);
   };
   const handleSnoozePreset = (preset: Pick<SnoozePreset, "snoozedUntil">) => {
     onSnooze(threadRef, preset);
@@ -1520,7 +1540,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         </TooltipPopup>
                       </Tooltip>
                     )
-                  ) : props.settlementSupported ||
+                  ) : onToggleTodo !== undefined ||
+                    props.settlementSupported ||
                     (isActivePinnedSlim && props.pinningSupported && canOperateThread) ? (
                     <span
                       className={cn(
@@ -1528,6 +1549,36 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         isWoke && "group-any-hover/sidebar-row:static",
                       )}
                     >
+                      {onToggleTodo !== undefined ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                // oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo button
+                                aria-label={isManualTodo ? "移出运行 / 待办" : "加入运行 / 待办"}
+                                aria-pressed={isManualTodo}
+                                onClick={handleToggleTodoClick}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                className={cn(
+                                  "inline-flex h-full cursor-pointer items-center rounded-md bg-transparent px-1.5 text-xs hover:text-foreground",
+                                  isManualTodo
+                                    ? "text-warning-foreground"
+                                    : "text-muted-foreground",
+                                )}
+                              />
+                            }
+                          >
+                            <BookmarkIcon
+                              className={cn("size-3", isManualTodo && "fill-current")}
+                            />
+                          </TooltipTrigger>
+                          <TooltipPopup side="top">
+                            {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo tooltip */}
+                            {isManualTodo ? "移出运行 / 待办" : "加入运行 / 待办"}
+                          </TooltipPopup>
+                        </Tooltip>
+                      ) : null}
                       {props.settlementSupported ? (
                         <Tooltip>
                           <TooltipTrigger

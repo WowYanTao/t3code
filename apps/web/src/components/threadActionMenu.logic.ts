@@ -14,6 +14,8 @@ export type ThreadActionMenuId =
   | "unpin"
   | "pin-project"
   | "unpin-project"
+  | "add-todo"
+  | "remove-todo"
   | "settle"
   | "unsettle"
   | "auto-settle"
@@ -109,6 +111,7 @@ export interface ThreadActionMenuState {
   } | null;
   readonly isPinned: boolean;
   readonly isProjectPinned?: boolean;
+  readonly isTodo?: boolean;
   readonly isSettled: boolean;
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
@@ -141,6 +144,8 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "project-settings",
     "pin-project",
     "unpin-project",
+    "add-todo",
+    "remove-todo",
     "mark-unread",
     "share-guest",
     "copy",
@@ -211,6 +216,23 @@ export function buildThreadActionMenuItems(
               ? { id: "unpin" as const, label: resolve(msg("Unpin thread")), icon: "pin-off" }
               : { id: "pin" as const, label: resolve(msg("Pin thread")), icon: "pin" },
           ]
+      : []),
+    ...(!state.isSettled && state.isTodo !== undefined
+      ? [
+          state.isTodo
+            ? {
+                id: "remove-todo" as const,
+                // oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo menu action
+                label: "移出运行 / 待办",
+                icon: "bookmark",
+              }
+            : {
+                id: "add-todo" as const,
+                // oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork manual todo menu action
+                label: "加入运行 / 待办",
+                icon: "bookmark",
+              },
+        ]
       : []),
     ...(state.supports.settlement
       ? [

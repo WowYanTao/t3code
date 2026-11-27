@@ -1,6 +1,7 @@
 import type { ContextMenuItem, KeybindingCommand, ScopedThreadRef } from "@t3tools/contracts";
 import {
   ArchiveIcon,
+  BookmarkIcon,
   CircleCheckIcon,
   ClockIcon,
   CopyIcon,
@@ -30,6 +31,7 @@ import type { ThreadActionMenuId } from "./threadActionMenu.logic";
 
 const ICONS: Record<string, LucideIcon> = {
   archive: ArchiveIcon,
+  bookmark: BookmarkIcon,
   "circle-check": CircleCheckIcon,
   clock: ClockIcon,
   copy: CopyIcon,

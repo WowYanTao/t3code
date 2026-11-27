@@ -583,6 +583,9 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarProjectPinnedThreadKeys: Schema.Array(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  sidebarTodoThreadKeys: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -2190,6 +2193,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectThreadAutoCollapseEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectThreadPreviewLimit: Schema.optionalKey(SidebarProjectThreadPreviewLimit),
   sidebarProjectPinnedThreadKeys: Schema.optionalKey(Schema.Array(Schema.String)),
+  sidebarTodoThreadKeys: Schema.optionalKey(Schema.Array(Schema.String)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

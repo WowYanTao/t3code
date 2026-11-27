@@ -122,4 +122,28 @@ describe("buildThreadActionMenuItems", () => {
         .map((item) => item.id),
     ).toEqual(["unpin", "pin-project"]);
   });
+
+  it("toggles manual todo menu item for unsettled threads", () => {
+    const addTodo = buildThreadActionMenuItems({
+      ...baseState,
+      isTodo: false,
+    });
+    expect(addTodo.map((item) => item.id)).toContain("add-todo");
+    expect(addTodo.map((item) => item.id)).not.toContain("remove-todo");
+
+    const removeTodo = buildThreadActionMenuItems({
+      ...baseState,
+      isTodo: true,
+    });
+    expect(removeTodo.map((item) => item.id)).toContain("remove-todo");
+    expect(removeTodo.map((item) => item.id)).not.toContain("add-todo");
+
+    const settled = buildThreadActionMenuItems({
+      ...baseState,
+      isSettled: true,
+      isTodo: false,
+    });
+    expect(settled.map((item) => item.id)).not.toContain("add-todo");
+    expect(settled.map((item) => item.id)).not.toContain("remove-todo");
+  });
 });

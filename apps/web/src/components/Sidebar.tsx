@@ -283,6 +283,7 @@ import {
   usePromotingDraftThreadKeys,
 } from "../composerDraftStore";
 import { useShownThreadRouteTarget } from "../hooks/useShownThreadRouteTarget";
+import { toggleSidebarTodoThread } from "../sidebarTodo";
 import {
   SidebarSearchResultRow,
   SortableThreadRow,
@@ -1096,6 +1097,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     (settings) => settings.sidebarProjectPinnedThreadKeys,
   );
   const projectPinnedThreadKeySet = new Set(projectPinnedThreadKeys);
+  const manualTodoThreadKeys = useClientSettings((settings) => settings.sidebarTodoThreadKeys);
+  const manualTodoThreadKeySet = new Set(manualTodoThreadKeys);
   const setProjectOrder = useUiStateStore((store) => store.setProjectOrder);
   const [projectFolderDrag, setProjectFolderDrag] = useState<{
     draggedKey: string;
@@ -2174,6 +2177,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
     });
   };
+  const attemptToggleTodo = (threadRef: ScopedThreadRef) => {
+    toggleSidebarTodoThread(scopedThreadKey(threadRef));
+  };
   const attemptUnpin = (threadRef: ScopedThreadRef) => {
     void (async () => {
       const result = await confirmAndUnpinThread(threadRef);
@@ -2231,6 +2237,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         thread.lastVisitedAt,
         localLastVisitedAtById[threadShellKey(thread)],
       ),
+    manualTodoThreadKeys: manualTodoThreadKeySet,
   });
   const attentionThreads = [
     ...attentionPartition.runningThreads,
@@ -2284,6 +2291,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         thread={thread}
         variant="slim"
         showSlimStatus
+        isManualTodo={manualTodoThreadKeySet.has(threadKey)}
         navigationParent="folder:attention"
         variantAction="settle"
         settlementSupported={serverConfigs.has(thread.environmentId)}
@@ -2330,6 +2338,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ? attemptUnpinFromProject
             : attemptUnpin
         }
+        onToggleTodo={attemptToggleTodo}
         onAcknowledgeWoke={acknowledgeWoke}
         onFileDropThreads={handleThreadFileDrop}
       />
@@ -3153,6 +3162,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   : null,
               isPinned,
               isProjectPinned: projectPinnedThreadKeySet.has(scopedThreadKey(threadRef)),
+              isTodo: manualTodoThreadKeySet.has(scopedThreadKey(threadRef)),
               isSettled,
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
@@ -3256,6 +3266,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "unpin-project":
             attemptUnpinFromProject(threadRef);
+            return;
+          case "add-todo":
+          case "remove-todo":
+            attemptToggleTodo(threadRef);
             return;
           case "turn-into-project": {
             const result = await turnThreadIntoProject(threadRef);
@@ -3966,6 +3980,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             variant={rowVariant}
+                            isManualTodo={
+                              section !== "settled" &&
+                              section !== "snoozed" &&
+                              manualTodoThreadKeySet.has(threadKey)
+                            }
                             navigationParent={
                               folderRow ??
                               (section === "working" ||
@@ -4061,6 +4080,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               projectPinnedThreadKeySet.has(threadKey)
                                 ? attemptUnpinFromProject
                                 : attemptUnpin
+                            }
+                            onToggleTodo={
+                              section !== "settled" && section !== "snoozed"
+                                ? attemptToggleTodo
+                                : undefined
                             }
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}

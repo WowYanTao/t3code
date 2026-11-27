@@ -1085,6 +1085,7 @@ export function partitionSidebarAttentionThreads<
   readonly threads: readonly TThread[];
   readonly getThreadKey: (thread: TThread) => string;
   readonly getLastVisitedAt?: (thread: TThread) => string | undefined;
+  readonly manualTodoThreadKeys?: ReadonlySet<string> | undefined;
 }): {
   readonly runningThreads: readonly TThread[];
   readonly todoThreads: readonly TThread[];
@@ -1094,6 +1095,7 @@ export function partitionSidebarAttentionThreads<
   const todoThreads: TThread[] = [];
   const seen = new Set<string>();
   const normalized: Array<ThreadStatusInput & SidebarThreadStatusInput> = [];
+  let hasManualTodo = false;
 
   for (const thread of input.threads) {
     const key = input.getThreadKey(thread);
@@ -1110,13 +1112,18 @@ export function partitionSidebarAttentionThreads<
     } else if (bucket === "todo") {
       todoThreads.push(thread);
       normalized.push(resolvedThread);
+    } else if (input.manualTodoThreadKeys?.has(key)) {
+      todoThreads.push(thread);
+      normalized.push(resolvedThread);
+      hasManualTodo = true;
     }
   }
 
+  const baseDot = normalized.length > 0 ? resolveSidebarFolderDot(normalized) : null;
   return {
     runningThreads,
     todoThreads,
-    dot: normalized.length > 0 ? resolveSidebarFolderDot(normalized) : null,
+    dot: baseDot ?? (hasManualTodo ? "attention" : null),
   };
 }
 

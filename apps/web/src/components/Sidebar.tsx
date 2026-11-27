@@ -71,6 +71,7 @@ import {
 import {
   CheckIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   FolderIcon,
   FolderPlusIcon,
   PlusIcon,
@@ -263,6 +264,8 @@ import {
   useComboboxFilter,
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import { ScrollArea } from "./ui/scroll-area";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider, TooltipScrollDismissArea } from "./ui/tooltip";
@@ -350,7 +353,6 @@ const EMPTY_DRAFT_IDS: readonly DraftId[] = [];
 
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
-const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 
@@ -482,11 +484,7 @@ function useSidebarThreads(input: {
   const nowMinute = useNowMinute();
   // Minute-quantized clocks would delay second-precise snooze wakes by up to a minute.
   const snoozeWakeClock = useSnoozeWakeClock(threads);
-  const [settledShelfExpanded, setSettledShelfExpanded] = useLocalStorage(
-    SETTLED_SHELF_EXPANDED_KEY,
-    false,
-    Schema.Boolean,
-  );
+  const [settledShelfExpanded, setSettledShelfExpanded] = useState(false);
   const [snoozedShelfExpanded, setSnoozedShelfExpanded] = useLocalStorage(
     SNOOZED_SHELF_EXPANDED_KEY,
     false,
@@ -640,7 +638,7 @@ function useSidebarThreads(input: {
         count: current.count + SETTLED_TAIL_PAGE_COUNT,
       })),
     settledShelfExpanded,
-    toggleSettledShelf: () => setSettledShelfExpanded((value) => !value),
+    setSettledShelfExpanded,
     snoozedShelfExpanded,
     toggleSnoozedShelf: () => setSnoozedShelfExpanded((value) => !value),
     workingShelfExpanded,
@@ -1375,7 +1373,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     hiddenSettledCount,
     showMoreSettled,
     settledShelfExpanded,
-    toggleSettledShelf,
+    setSettledShelfExpanded,
     snoozedShelfExpanded,
     toggleSnoozedShelf,
     workingShelfExpanded,
@@ -2223,10 +2221,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
     }
-    items.push({ kind: "marker", marker: "settled-header" });
-    const settledRows = rowsOf(renderedSettledThreads, "settled");
-    items.push({ kind: "marker", marker: "settled-placeholder" });
-    items.push(...settledRows);
     return items;
   })();
   // Preserve the list while streamed updates leave order unchanged to retain row memoization.
@@ -3725,8 +3719,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
-                        const isCard =
-                          section === "active" || section === "pinned" || section === "working";
+                        const isCard = section === "active" || section === "working";
                         const rowVariant = folderRow
                           ? folderRowsMultiline
                             ? "folder-multiline"
@@ -4030,63 +4023,158 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               />,
                             );
                             break;
-                          case "settled-header":
-                            items.push(
-                              <SidebarSectionHeader
-                                key="settled-shelf-header"
-                                marker="settled-header"
-                                className={cn(
-                                  workingThreads.length + snoozedThreads.length === 0 && "mt-auto",
-                                )}
-                                label={gt("Settled", { $context: "sidebar section" })}
-                                count={settledCount}
-                                dragging={from !== null}
-                                isDropTarget={dragTargetSection === "settled"}
-                                toggle={{
-                                  expanded: settledShelfExpanded,
-                                  onToggle: toggleSettledShelf,
-                                }}
-                              />,
-                            );
-                            break;
-                          case "settled-placeholder":
-                            items.push(
-                              <SidebarSectionPlaceholder
-                                key="settled-placeholder"
-                                marker="settled-placeholder"
-                                label={gt("Settled", { $context: "sidebar section" })}
-                                showHint={
-                                  from !== null &&
-                                  (renderedSettledThreads.length === 0 ||
-                                    (from === "settled" &&
-                                      renderedSettledThreads.length === 1 &&
-                                      dragTargetSection !== null &&
-                                      dragTargetSection !== "settled"))
-                                }
-                                isDropTarget={dragTargetSection === "settled"}
-                              />,
-                            );
-                            break;
                         }
                       }
                       return items;
                     })()}
-                    {settledShelfExpanded && hiddenSettledCount > 0 ? (
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            </TooltipProvider>
+          ) : null}
+        </SidebarGroup>
+      </SidebarContent>
+      {!isSearchingThreads && (settledCount > 0 || settledShelfExpanded) ? (
+        <div className="shrink-0 border-t border-sidebar-border/60 px-(--sidebar-content-inset) py-1">
+          <Popover open={settledShelfExpanded} onOpenChange={setSettledShelfExpanded}>
+            <PopoverTrigger
+              render={
+                <button
+                  type="button"
+                  data-sidebar-row="shelf:settled"
+                  className={cn(
+                    "flex h-8 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left text-xs font-medium text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    settledShelfExpanded && "bg-sidebar-row-hover text-sidebar-foreground",
+                  )}
+                />
+              }
+            >
+              <CheckIcon aria-hidden className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                {gt("Settled", { $context: "sidebar section" })}
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
+                {settledCount}
+              </span>
+              <ChevronRightIcon aria-hidden className="size-3 shrink-0" />
+            </PopoverTrigger>
+            <PopoverPopup
+              side="right"
+              align="end"
+              sideOffset={8}
+              width="md"
+              padding="none"
+              className="overflow-hidden"
+            >
+              <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                <span className="text-xs font-medium text-foreground">
+                  {gt("Settled", { $context: "sidebar section" })}
+                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">{settledCount}</span>
+              </div>
+              <TooltipProvider
+                key="sidebar-settled-popover-tooltips-150"
+                delay={150}
+                closeDelay={0}
+                timeout={400}
+              >
+                <ScrollArea className="max-h-112" hideScrollbars scrollFade>
+                  <ul className="flex flex-col gap-px p-1.5">
+                    {renderedSettledThreads.length === 0 ? (
+                      <li className="list-none px-2 py-6 text-center text-xs text-muted-foreground">
+                        {olderSettledShelf.loading ? gt("Loading") : gt("No threads found")}
+                      </li>
+                    ) : (
+                      renderedSettledThreads.map((thread) => {
+                        const threadKey = scopedThreadKey(
+                          scopeThreadRef(thread.environmentId, thread.id),
+                        );
+                        return (
+                          <SortableThreadRow
+                            key={threadKey}
+                            sortableId={`settled-popover:${threadKey}`}
+                            contextDrag={false}
+                            sortableDisabled
+                            thread={thread}
+                            variant="slim"
+                            variantAction="unsettle"
+                            settlementSupported={serverConfigs.has(thread.environmentId)}
+                            snoozeSupported={serverConfigs.has(thread.environmentId)}
+                            pinningSupported={serverConfigs.has(thread.environmentId)}
+                            isPinned={thread.pinnedAt != null}
+                            dropVerb={null}
+                            dragOverPinned={false}
+                            sweepAction={
+                              actionSweep?.keys.has(threadKey) ? actionSweep.action : null
+                            }
+                            snoozeWakeLabelText={null}
+                            wokeAt={threadWokeAt(thread, { now: snoozeNow })}
+                            isActive={routeRowThreadKey === threadKey}
+                            isRouteThread={routeThreadKey === threadKey}
+                            readOpensPullRequestsInRightPanel={readOpensPullRequestsInRightPanel}
+                            jumpLabel={null}
+                            environmentLabel={
+                              environmentLabelById.get(thread.environmentId) ?? null
+                            }
+                            environmentMachine={
+                              environmentMachineById.get(thread.environmentId) ?? "server"
+                            }
+                            project={
+                              projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
+                              null
+                            }
+                            projectDisplayName={
+                              projectDisplayNameByKey.get(
+                                `${thread.environmentId}:${thread.projectId}`,
+                              ) ?? null
+                            }
+                            providerEntryByInstanceId={
+                              providerEntriesByEnvironment.get(thread.environmentId) ??
+                              EMPTY_PROVIDER_ENTRIES
+                            }
+                            timestampFormat={timestampFormat}
+                            onThreadClick={(event, targetThread) => {
+                              handleThreadClick(event, targetThread);
+                              if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                                setSettledShelfExpanded(false);
+                              }
+                            }}
+                            onThreadActivate={(targetThread) => {
+                              navigateToThread(targetThread);
+                              setSettledShelfExpanded(false);
+                            }}
+                            onStartRename={startThreadRename}
+                            onRenameTitleChange={setRenamingTitle}
+                            onCommitRename={commitThreadRename}
+                            onCancelRename={cancelThreadRename}
+                            isRenaming={renamingThreadKey === threadKey}
+                            renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
+                            onContextMenu={handleThreadContextMenu}
+                            onSettle={attemptSettle}
+                            onActionSweepStart={startActionSweep}
+                            onUnsettle={attemptUnsettle}
+                            onSnooze={attemptSnooze}
+                            onUnsnooze={attemptUnsnooze}
+                            onUnpin={attemptUnpin}
+                            onAcknowledgeWoke={acknowledgeWoke}
+                            onFileDropThreads={handleThreadFileDrop}
+                          />
+                        );
+                      })
+                    )}
+                    {hiddenSettledCount > 0 ? (
                       <li className="list-none">
                         <button
                           type="button"
-                          data-sidebar-row="settled:more"
-                          data-sidebar-parent="shelf:settled"
                           aria-disabled={olderSettledShelf.loading}
                           onClick={() => {
                             if (olderSettledShelf.loading) return;
                             olderSettledShelf.retry();
                             showMoreSettled();
                           }}
-                          className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground aria-disabled:cursor-default"
+                          className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground aria-disabled:cursor-default"
                         >
-                          {/* Plus means "add", so revealing more uses a chevron. */}
-                          <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
+                          <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
                           {olderSettledShelf.loading
                             ? gt("Loading")
                             : olderSettledShelf.failed
@@ -4101,12 +4189,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       </li>
                     ) : null}
                   </ul>
-                </SortableContext>
-              </DndContext>
-            </TooltipProvider>
-          ) : null}
-        </SidebarGroup>
-      </SidebarContent>
+                </ScrollArea>
+              </TooltipProvider>
+            </PopoverPopup>
+          </Popover>
+        </div>
+      ) : null}
       <SidebarChromeFooter />
     </SidebarFolderDrop>
   );

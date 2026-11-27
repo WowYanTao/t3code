@@ -1,7 +1,19 @@
-import { useState } from "react";
+import * as Schema from "effect/Schema";
+import { useLayoutEffect, useRef, useState } from "react";
 
-import { type ResizableWidthHandlers, useResizableWidth } from "./useResizableWidth";
 import { observeResize } from "../lib/observeResize";
+import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
+import {
+  computePreviewPanelWidthRatio,
+  getPreviewPanelRatioStorageKey,
+  isValidPreviewPanelWidthRatio,
+  PREVIEW_PANEL_DEFAULT_WIDTH,
+  PREVIEW_PANEL_WIDTH_STORAGE_KEY,
+  resolvePreviewPanelInlineWidth,
+} from "./usePreviewPanelInlineSize.logic";
+import { RESIZABLE_WIDTH_PROPERTY, type ResizableWidthHandlers } from "./useResizableWidth";
+import { useResizeDrag } from "./useResizeDrag";
+import { useStableCallback } from "./useStableCallback";
 
 export interface PreviewPanelInlineSize {
   readonly width: number;
@@ -10,12 +22,28 @@ export interface PreviewPanelInlineSize {
   readonly observeRow: (host: HTMLElement) => () => void;
 }
 
-const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
-const PREVIEW_PANEL_MIN_WIDTH = 360;
-const PREVIEW_PANEL_MAX_WIDTH_FRACTION = 0.7;
-/** Below this, the sibling chat column's composer overflows. */
-const SIBLING_COLUMN_MIN_WIDTH = 360;
-const PREVIEW_PANEL_DEFAULT_WIDTH = 540;
+const RatioSchema = Schema.Finite;
+
+function readViewportWidth(): number {
+  return typeof window === "undefined" ? 1280 : window.innerWidth;
+}
+
+function readContainerWidth(element: HTMLElement | null | undefined): number | undefined {
+  if (!element) return undefined;
+  const width = element.clientWidth;
+  return Number.isFinite(width) && width > 0 ? width : undefined;
+}
+
+function readStoredRatio(ratioStorageKey: string): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = getLocalStorageItem(ratioStorageKey, RatioSchema);
+    return isValidPreviewPanelWidthRatio(stored) ? stored : null;
+  } catch (error) {
+    console.error("Could not read persisted panel width ratio.", error);
+    return null;
+  }
+}
 
 export function usePreviewPanelInlineSize(
   options: {
@@ -27,23 +55,91 @@ export function usePreviewPanelInlineSize(
 ): PreviewPanelInlineSize {
   const enabled = options.enabled ?? true;
   const container = options.container;
-  const [maxWidth, setMaxWidth] = useState(() =>
-    getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
-  );
-  const { width, handlers } = useResizableWidth({
-    storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
-    defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
-    minWidth: PREVIEW_PANEL_MIN_WIDTH,
-    maxWidth,
-    edge: "left",
+  const storageKey = options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY;
+  const ratioStorageKey = getPreviewPanelRatioStorageKey(storageKey);
+  const defaultWidth = options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH;
+
+  const rowRef = useRef<HTMLElement | null>(container ?? null);
+  const [measurements, setMeasurements] = useState(() => ({
+    viewportWidth: readViewportWidth(),
+    containerWidth: readContainerWidth(container),
+  }));
+  const [ratioState, setRatioState] = useState(() => ({
+    storageKey: ratioStorageKey,
+    ratio: readStoredRatio(ratioStorageKey),
+  }));
+  if (ratioState.storageKey !== ratioStorageKey) {
+    setRatioState({ storageKey: ratioStorageKey, ratio: readStoredRatio(ratioStorageKey) });
+  }
+
+  const resolved = resolvePreviewPanelInlineWidth({
+    ratio: ratioState.ratio,
+    defaultWidth,
+    viewportWidth: measurements.viewportWidth,
+    containerWidth: measurements.containerWidth,
   });
+
+  const restoreWidth = useStableCallback((host: HTMLElement | null) => {
+    host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${resolved.width}px`);
+  });
+
+  const commitWidth = (nextRatioStorageKey: string, finalWidth: number) => {
+    const liveContainerWidth = readContainerWidth(rowRef.current) ?? measurements.containerWidth;
+    const liveReferenceWidth = liveContainerWidth ?? readViewportWidth();
+    const nextRatio = computePreviewPanelWidthRatio(finalWidth, liveReferenceWidth);
+    if (nextRatio === null) return;
+    setRatioState({ storageKey: nextRatioStorageKey, ratio: nextRatio });
+    try {
+      setLocalStorageItem(nextRatioStorageKey, nextRatio, RatioSchema);
+    } catch (error) {
+      console.error("Could not persist panel width ratio.", error);
+    }
+  };
+
+  const drag = useResizeDrag<HTMLElement>((event) => {
+    const host = event.currentTarget.parentElement;
+    // Disable drag transitions through transition-property; the host renders transition-duration.
+    host?.style.setProperty("transition-property", "none");
+    const startRatioStorageKey = ratioStorageKey;
+    const startWidth = resolved.width;
+    return {
+      width: startWidth,
+      edge: "left",
+      bounds: { min: resolved.minWidth, max: resolved.maxWidth },
+      resize(nextWidth) {
+        host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${nextWidth}px`);
+        return nextWidth;
+      },
+      finish(finalWidth, moved) {
+        if (moved) commitWidth(startRatioStorageKey, finalWidth);
+        else restoreWidth(host);
+      },
+      cleanup(committed) {
+        host?.style.removeProperty("transition-property");
+        if (!committed) host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${startWidth}px`);
+      },
+    };
+  });
+
+  const { refresh } = drag;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reapplies the live drag pointer position to the DOM before paint when the bounds change
+  useLayoutEffect(
+    () => refresh({ min: resolved.minWidth, max: resolved.maxWidth }),
+    [refresh, resolved.minWidth, resolved.maxWidth],
+  );
+
   const observeRow = (host: HTMLElement) => {
     const row = container ?? (enabled ? host.parentElement : null) ?? null;
-    // Ref callbacks run before paint, so the width is clamped without an over-wide
-    // flash on mount. Only the derived cap is stored: the row resizes every frame
-    // of a sidebar drag, but an unchanged cap skips re-rendering the owner.
+    rowRef.current = row;
+    // Ref callbacks run before paint, so the width resolves without a flash on mount.
     const measure = () => {
-      setMaxWidth(getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth));
+      const nextViewportWidth = readViewportWidth();
+      const nextContainerWidth = readContainerWidth(row);
+      setMeasurements((prev) =>
+        prev.viewportWidth === nextViewportWidth && prev.containerWidth === nextContainerWidth
+          ? prev
+          : { viewportWidth: nextViewportWidth, containerWidth: nextContainerWidth },
+      );
     };
     measure();
     let frame = 0;
@@ -62,13 +158,17 @@ export function usePreviewPanelInlineSize(
       stopObserving?.();
     };
   };
-  return { width, handlers, observeRow };
-}
 
-function getPreviewPanelMaxWidth(viewportWidth: number, containerWidth?: number): number {
-  const fractionCap = Math.floor(viewportWidth * PREVIEW_PANEL_MAX_WIDTH_FRACTION);
-  const containerCap =
-    containerWidth === undefined ? Infinity : Math.floor(containerWidth) - SIBLING_COLUMN_MIN_WIDTH;
-  // Keep max >= min; an inverted clamp would overwrite the saved width on drag end.
-  return Math.max(PREVIEW_PANEL_MIN_WIDTH, Math.min(fractionCap, containerCap));
+  return {
+    width: resolved.width,
+    handlers: {
+      ref: drag.ref,
+      onPointerDown: drag.onPointerDown,
+      onPointerMove: drag.onPointerMove,
+      onPointerUp: drag.onPointerUp,
+      onPointerCancel: drag.onPointerCancel,
+      onLostPointerCapture: drag.onLostPointerCapture,
+    },
+    observeRow,
+  };
 }

@@ -114,6 +114,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
       }}
       className={cn(
         "group/project-folder relative mt-2 list-none first:mt-0",
+        !collapsed && "sticky top-0 z-10 bg-sidebar",
         props.isDragging && "opacity-50",
       )}
     >

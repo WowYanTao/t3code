@@ -4140,6 +4140,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key={`project-folder:${folderKey}`}
                                 group={folder.group}
                                 collapsed={folder.collapsed}
+                                canCollapseTail={folder.canCollapseTail}
                                 hiddenThreads={folder.hiddenThreads}
                                 reorderable={projectFolders.length > 1}
                                 isDragging={isDraggingFolder}
@@ -4151,6 +4152,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 onDrop={handleProjectFolderDrop}
                                 onDragEnd={handleProjectFolderDragEnd}
                                 onToggle={toggleProjectFolder}
+                                onCollapseTail={toggleProjectFolderTail}
                                 onNewThread={startThreadInProjectFolder}
                                 onContextMenu={handleProjectFolderContextMenu}
                               />,

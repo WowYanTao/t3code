@@ -1,7 +1,7 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ContextMenuSource } from "@t3tools/contracts";
-import { ChevronDownIcon, SquarePenIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronsDownUpIcon, SquarePenIcon } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { memo, type DragEvent } from "react";
 
@@ -43,6 +43,7 @@ export function sidebarFolderRowId(projectKey: string) {
 export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: {
   group: SidebarProjectSnapshot;
   collapsed: boolean;
+  canCollapseTail?: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
   reorderable?: boolean;
   isDragging?: boolean;
@@ -54,6 +55,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   onDrop?: (projectKey: string, placement: "before" | "after") => void;
   onDragEnd?: () => void;
   onToggle: (group: SidebarProjectSnapshot) => void;
+  onCollapseTail?: (projectKey: string) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
   onContextMenu: (
     group: SidebarProjectSnapshot,
@@ -146,7 +148,12 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ProjectFavicon project={group} className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90",
+            !collapsed && props.canCollapseTail && "pr-6",
+          )}
+        >
           {group.displayName}
         </span>
         {dot ? (
@@ -168,27 +175,51 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         />
       </button>
       {/* Sits over the count, which hides on hover or focus, and left of the chevron. */}
-      <span className="absolute inset-y-0 right-6 flex items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                data-sidebar-action-for={rowId}
-                size="icon-xs"
-                variant="ghost-muted"
-                aria-label={gt("New thread in {project}", { project: group.displayName })}
-                onClick={() => props.onNewThread(group)}
-              />
-            }
-          >
-            <SquarePenIcon aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup>
-            <T>
-              New thread in <Var>{group.displayName}</Var>
-            </T>
-          </TooltipPopup>
-        </Tooltip>
+      <span className="pointer-events-none absolute inset-y-0 right-6 flex items-center gap-0.5">
+        <span className="pointer-events-auto opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  data-sidebar-action-for={rowId}
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  aria-label={gt("New thread in {project}", { project: group.displayName })}
+                  onClick={() => props.onNewThread(group)}
+                />
+              }
+            >
+              <SquarePenIcon aria-hidden />
+            </TooltipTrigger>
+            <TooltipPopup>
+              <T>
+                New thread in <Var>{group.displayName}</Var>
+              </T>
+            </TooltipPopup>
+          </Tooltip>
+        </span>
+        {!collapsed && props.canCollapseTail && props.onCollapseTail ? (
+          <span className="pointer-events-auto">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    data-sidebar-action-for={rowId}
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    aria-label={gt("Show less")}
+                    onClick={() => props.onCollapseTail?.(group.projectKey)}
+                  />
+                }
+              >
+                <ChevronsDownUpIcon aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup>
+                <T>Show less</T>
+              </TooltipPopup>
+            </Tooltip>
+          </span>
+        ) : null}
       </span>
     </li>
   );

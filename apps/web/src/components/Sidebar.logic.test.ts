@@ -1825,7 +1825,7 @@ describe("partitionProjectFolderThreads", () => {
     expect(expanded.canCollapseTail).toBe(true);
   });
 
-  it("places project-pinned threads first and never hides them when auto-collapsed", () => {
+  it("places project-pinned threads first and excludes them from previewLimit", () => {
     const ordered = orderProjectFolderThreads({
       threads,
       getThreadKey,
@@ -1842,10 +1842,10 @@ describe("partitionProjectFolderThreads", () => {
       routeThreadKey: null,
       pinnedThreadKeys: new Set(["t6", "t4"]),
     });
-    expect(folded.visibleThreads.map(getThreadKey)).toEqual(["t6", "t4", "t1"]);
-    expect(folded.hiddenThreads.map(getThreadKey)).toEqual(["t2", "t3", "t5", "t7"]);
+    expect(folded.visibleThreads.map(getThreadKey)).toEqual(["t6", "t4", "t1", "t2", "t3"]);
+    expect(folded.hiddenThreads.map(getThreadKey)).toEqual(["t5", "t7"]);
 
-    // Even when project-pinned count exceeds previewLimit, all project-pinned threads remain visible.
+    // Even when project-pinned count exceeds previewLimit, previewLimit still applies to unpinned threads.
     const morePinnedThanLimit = partitionProjectFolderThreads({
       threads: orderProjectFolderThreads({
         threads,
@@ -1859,8 +1859,15 @@ describe("partitionProjectFolderThreads", () => {
       routeThreadKey: null,
       pinnedThreadKeys: new Set(["t7", "t5", "t3", "t2"]),
     });
-    expect(morePinnedThanLimit.visibleThreads.map(getThreadKey)).toEqual(["t7", "t5", "t3", "t2"]);
-    expect(morePinnedThanLimit.hiddenThreads.map(getThreadKey)).toEqual(["t1", "t4", "t6"]);
+    expect(morePinnedThanLimit.visibleThreads.map(getThreadKey)).toEqual([
+      "t7",
+      "t5",
+      "t3",
+      "t2",
+      "t1",
+      "t4",
+    ]);
+    expect(morePinnedThanLimit.hiddenThreads.map(getThreadKey)).toEqual(["t6"]);
   });
 });
 

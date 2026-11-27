@@ -1157,12 +1157,12 @@ export function partitionProjectFolderThreads<TThread>(input: {
     routeThreadKey,
     pinnedThreadKeys,
   } = input;
+  const isPinned = (thread: TThread) =>
+    pinnedThreadKeys !== undefined && pinnedThreadKeys.has(getThreadKey(thread));
   const pinnedCount =
-    pinnedThreadKeys && pinnedThreadKeys.size > 0
-      ? threads.filter((thread) => pinnedThreadKeys.has(getThreadKey(thread))).length
-      : 0;
-  const effectiveLimit = Math.max(previewLimit, pinnedCount);
-  if (!autoCollapseEnabled || previewLimit <= 0 || threads.length <= effectiveLimit) {
+    pinnedThreadKeys && pinnedThreadKeys.size > 0 ? threads.filter(isPinned).length : 0;
+  const unpinnedCount = threads.length - pinnedCount;
+  if (!autoCollapseEnabled || previewLimit <= 0 || unpinnedCount <= previewLimit) {
     return {
       visibleThreads: threads,
       hiddenThreads: [],
@@ -1176,15 +1176,18 @@ export function partitionProjectFolderThreads<TThread>(input: {
       canCollapseTail: true,
     };
   }
-  const visibleThreads = threads.slice(0, effectiveLimit);
-  const visibleKeys = new Set(visibleThreads.map(getThreadKey));
-  if (pinnedThreadKeys && pinnedThreadKeys.size > 0) {
-    for (const thread of threads) {
-      const key = getThreadKey(thread);
-      if (pinnedThreadKeys.has(key) && !visibleKeys.has(key)) {
-        visibleThreads.push(thread);
-        visibleKeys.add(key);
-      }
+  const visibleThreads: TThread[] = [];
+  const visibleKeys = new Set<string>();
+  let visibleUnpinnedCount = 0;
+  for (const thread of threads) {
+    const key = getThreadKey(thread);
+    if (isPinned(thread)) {
+      visibleThreads.push(thread);
+      visibleKeys.add(key);
+    } else if (visibleUnpinnedCount < previewLimit) {
+      visibleThreads.push(thread);
+      visibleKeys.add(key);
+      visibleUnpinnedCount += 1;
     }
   }
   if (routeThreadKey !== null && !visibleKeys.has(routeThreadKey)) {

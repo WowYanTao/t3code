@@ -1276,11 +1276,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const diff = latestRunDiff(thread);
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   const metaLineEmpty =
-    props.environmentLabel === null &&
-    prBadge === null &&
-    issueBadge === null &&
-    diff === null &&
-    runningTerminalIds.length === 0;
+    props.environmentLabel === null && prBadge === null && issueBadge === null && diff === null;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
       {props.environmentLabel !== null ? (
@@ -1316,11 +1312,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     </div>
   );
   const titleLineIcons = metaLineEmpty ? (
-    <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
-      <SidebarProviderStack
-        thread={thread}
-        providerEntryByInstanceId={props.providerEntryByInstanceId}
-      />
+    <span className="inline-flex shrink-0 items-center gap-1">
+      {terminalStatusIcon}
+      <span aria-hidden className="pointer-events-none inline-flex shrink-0 items-center gap-1">
+        <SidebarProviderStack
+          thread={thread}
+          providerEntryByInstanceId={props.providerEntryByInstanceId}
+        />
+      </span>
     </span>
   ) : null;
 
@@ -1385,9 +1384,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 </span>
               )}
               {draftIndicator}
+              {pinIndicator ? (
+                <span className="-mr-1 inline-flex shrink-0">{pinIndicator}</span>
+              ) : null}
               {title}
               {multiline ? titleLineIcons : null}
-              {pinIndicator}
               {multiline ? null : terminalStatusIcon}
               {multiline ? null : issueBadge}
               {isRegeneratingTitle ? (

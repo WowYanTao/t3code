@@ -37,7 +37,10 @@ import {
   type SidebarSection,
   resolveSidebarDropVerb,
   groupSidebarThreadsByProject,
+  orderProjectFolderThreads,
   partitionProjectFolderThreads,
+  planProjectFolderReorder,
+  projectFolderBucket,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
   withoutRemovedCheckout,
@@ -1820,6 +1823,120 @@ describe("partitionProjectFolderThreads", () => {
     ]);
     expect(expanded.hiddenThreads).toEqual([]);
     expect(expanded.canCollapseTail).toBe(true);
+  });
+
+  it("places project-pinned threads first and never hides them when auto-collapsed", () => {
+    const ordered = orderProjectFolderThreads({
+      threads,
+      getThreadKey,
+      pinnedThreadKeys: ["t6", "t4"],
+    });
+    expect(ordered.map(getThreadKey)).toEqual(["t6", "t4", "t1", "t2", "t3", "t5", "t7"]);
+
+    const folded = partitionProjectFolderThreads({
+      threads: ordered,
+      getThreadKey,
+      autoCollapseEnabled: true,
+      previewLimit: 3,
+      tailExpanded: false,
+      routeThreadKey: null,
+      pinnedThreadKeys: new Set(["t6", "t4"]),
+    });
+    expect(folded.visibleThreads.map(getThreadKey)).toEqual(["t6", "t4", "t1"]);
+    expect(folded.hiddenThreads.map(getThreadKey)).toEqual(["t2", "t3", "t5", "t7"]);
+
+    // Even when project-pinned count exceeds previewLimit, all project-pinned threads remain visible.
+    const morePinnedThanLimit = partitionProjectFolderThreads({
+      threads: orderProjectFolderThreads({
+        threads,
+        getThreadKey,
+        pinnedThreadKeys: ["t7", "t5", "t3", "t2"],
+      }),
+      getThreadKey,
+      autoCollapseEnabled: true,
+      previewLimit: 2,
+      tailExpanded: false,
+      routeThreadKey: null,
+      pinnedThreadKeys: new Set(["t7", "t5", "t3", "t2"]),
+    });
+    expect(morePinnedThanLimit.visibleThreads.map(getThreadKey)).toEqual(["t7", "t5", "t3", "t2"]);
+    expect(morePinnedThanLimit.hiddenThreads.map(getThreadKey)).toEqual(["t1", "t4", "t6"]);
+  });
+});
+
+describe("planProjectFolderReorder", () => {
+  const makeGroup = (
+    projectKey: string,
+    memberIds: readonly string[],
+    opts: { pinned?: boolean; archived?: boolean } = {},
+  ) => ({
+    projectKey,
+    pinned: opts.pinned ?? false,
+    archived: opts.archived ?? false,
+    memberProjects: memberIds.map((id) => ({ id })),
+  });
+  const getMemberOrderKey = (member: { id: string }) => member.id;
+
+  it("reorders folders before or after targets within the same bucket", () => {
+    const groups = [
+      makeGroup("pin-a", ["pin-a"], { pinned: true }),
+      makeGroup("a", ["a-local", "a-remote"]),
+      makeGroup("b", ["b"]),
+      makeGroup("c", ["c"]),
+      makeGroup("arch-a", ["arch-a"], { archived: true }),
+    ];
+
+    expect(projectFolderBucket(groups[0]!)).toBe("pinned");
+    expect(projectFolderBucket(groups[1]!)).toBe("open");
+    expect(projectFolderBucket(groups[4]!)).toBe("archived");
+
+    expect(
+      planProjectFolderReorder({
+        groups,
+        sourceProjectKey: "c",
+        targetProjectKey: "a",
+        placement: "before",
+        getMemberOrderKey,
+      }),
+    ).toEqual(["pin-a", "c", "a-local", "a-remote", "b", "arch-a"]);
+
+    expect(
+      planProjectFolderReorder({
+        groups,
+        sourceProjectKey: "a",
+        targetProjectKey: "b",
+        placement: "after",
+        getMemberOrderKey,
+      }),
+    ).toEqual(["pin-a", "b", "a-local", "a-remote", "c", "arch-a"]);
+  });
+
+  it("rejects cross-bucket moves and no-op placements", () => {
+    const groups = [
+      makeGroup("pin-a", ["pin-a"], { pinned: true }),
+      makeGroup("a", ["a"]),
+      makeGroup("b", ["b"]),
+    ];
+
+    expect(
+      planProjectFolderReorder({
+        groups,
+        sourceProjectKey: "b",
+        targetProjectKey: "pin-a",
+        placement: "before",
+        getMemberOrderKey,
+      }),
+    ).toBeNull();
+
+    expect(
+      planProjectFolderReorder({
+        groups,
+        sourceProjectKey: "a",
+        targetProjectKey: "b",
+        placement: "before",
+        getMemberOrderKey,
+      }),
+    ).toBeNull();
   });
 });
 

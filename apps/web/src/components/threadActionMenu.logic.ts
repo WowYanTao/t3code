@@ -12,6 +12,8 @@ export type ThreadActionMenuId =
   | "project-settings"
   | "pin"
   | "unpin"
+  | "pin-project"
+  | "unpin-project"
   | "settle"
   | "unsettle"
   | "auto-settle"
@@ -106,6 +108,7 @@ export interface ThreadActionMenuState {
     readonly isActive: boolean;
   } | null;
   readonly isPinned: boolean;
+  readonly isProjectPinned?: boolean;
   readonly isSettled: boolean;
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
@@ -120,6 +123,7 @@ export interface ThreadActionMenuState {
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
     readonly pinning: boolean;
+    readonly projectPinning?: boolean;
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
@@ -135,6 +139,8 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "find",
     "new-thread-on-branch",
     "project-settings",
+    "pin-project",
+    "unpin-project",
     "mark-unread",
     "share-guest",
     "copy",
@@ -173,11 +179,38 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     ...(state.supports.pinning
-      ? [
-          state.isPinned
-            ? { id: "unpin" as const, label: resolve(msg("Unpin thread")), icon: "pin-off" }
-            : { id: "pin" as const, label: resolve(msg("Pin thread")), icon: "pin" },
-        ]
+      ? state.supports.projectPinning
+        ? state.isPinned
+          ? [
+              { id: "unpin" as const, label: resolve(msg("取消整体置顶")), icon: "pin-off" },
+              {
+                id: "pin-project" as const,
+                label: resolve(msg("改为项目内置顶")),
+                icon: "pin",
+              },
+            ]
+          : state.isProjectPinned
+            ? [
+                {
+                  id: "unpin-project" as const,
+                  label: resolve(msg("取消项目内置顶")),
+                  icon: "pin-off",
+                },
+                { id: "pin" as const, label: resolve(msg("转为整体置顶")), icon: "pin" },
+              ]
+            : [
+                {
+                  id: "pin-project" as const,
+                  label: resolve(msg("项目内置顶")),
+                  icon: "pin",
+                },
+                { id: "pin" as const, label: resolve(msg("整体置顶")), icon: "pin" },
+              ]
+        : [
+            state.isPinned
+              ? { id: "unpin" as const, label: resolve(msg("Unpin thread")), icon: "pin-off" }
+              : { id: "pin" as const, label: resolve(msg("Pin thread")), icon: "pin" },
+          ]
       : []),
     ...(state.supports.settlement
       ? [

@@ -3,7 +3,7 @@ import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environ
 import type { ContextMenuSource } from "@t3tools/contracts";
 import { ChevronDownIcon, SquarePenIcon } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
-import { memo } from "react";
+import { memo, type DragEvent } from "react";
 
 import { cn } from "~/lib/utils";
 import { contextMenuSourceOf } from "../../contextMenuSource";
@@ -28,6 +28,8 @@ const FOLDER_DOT_LABEL = {
   working: msg(", working", { $context: "project folder status, read after its name" }),
 } as const;
 
+const PROJECT_FOLDER_DRAG_MIME = "application/x-t3code-project-folder";
+
 /** The folder's sidebar tree row; its thread rows name it as their parent. */
 export function sidebarFolderRowId(projectKey: string) {
   return `folder:${projectKey}`;
@@ -42,6 +44,15 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   group: SidebarProjectSnapshot;
   collapsed: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
+  reorderable?: boolean;
+  isDragging?: boolean;
+  canDrop?: boolean;
+  dropPlacement?: "before" | "after" | null;
+  onDragStart?: (projectKey: string) => void;
+  onDragHover?: (projectKey: string, placement: "before" | "after") => void;
+  onDragLeave?: (projectKey: string) => void;
+  onDrop?: (projectKey: string, placement: "before" | "after") => void;
+  onDragEnd?: () => void;
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
   onContextMenu: (
@@ -68,11 +79,56 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         })),
       )
     : null;
+  const resolveDropPlacement = (event: DragEvent<HTMLLIElement>): "before" | "after" => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY - rect.top < rect.height / 2 ? "before" : "after";
+  };
   return (
     <li
       data-testid="sidebar-project-folder"
-      className="group/project-folder relative mt-2 list-none first:mt-0"
+      draggable={props.reorderable === true}
+      onDragStart={(event) => {
+        if (!props.reorderable) return;
+        event.dataTransfer.setData(PROJECT_FOLDER_DRAG_MIME, group.projectKey);
+        event.dataTransfer.effectAllowed = "move";
+        props.onDragStart?.(group.projectKey);
+      }}
+      onDragOver={(event) => {
+        if (!props.canDrop) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        props.onDragHover?.(group.projectKey, resolveDropPlacement(event));
+      }}
+      onDragLeave={(event) => {
+        if (!props.canDrop) return;
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        props.onDragLeave?.(group.projectKey);
+      }}
+      onDrop={(event) => {
+        if (!props.canDrop) return;
+        event.preventDefault();
+        props.onDrop?.(group.projectKey, resolveDropPlacement(event));
+      }}
+      onDragEnd={() => {
+        props.onDragEnd?.();
+      }}
+      className={cn(
+        "group/project-folder relative mt-2 list-none first:mt-0",
+        props.isDragging && "opacity-50",
+      )}
     >
+      {props.dropPlacement === "before" ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-2 -top-0.5 z-10 h-0.5 rounded-full bg-primary"
+        />
+      ) : null}
+      {props.dropPlacement === "after" ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-2 -bottom-0.5 z-10 h-0.5 rounded-full bg-primary"
+        />
+      ) : null}
       <button
         type="button"
         data-sidebar-row={rowId}

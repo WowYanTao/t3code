@@ -1102,8 +1102,38 @@ export function groupSidebarThreadsByProject<
 }
 
 /**
+ * Moves project-pinned threads to the top of a project folder in their saved pin order,
+ * preserving the relative order of all other threads.
+ */
+export function orderProjectFolderThreads<TThread>(input: {
+  readonly threads: readonly TThread[];
+  readonly getThreadKey: (thread: TThread) => string;
+  readonly pinnedThreadKeys: readonly string[];
+}): TThread[] {
+  const { threads, getThreadKey, pinnedThreadKeys } = input;
+  if (pinnedThreadKeys.length === 0 || threads.length <= 1) return [...threads];
+  const rankByKey = new Map<string, number>();
+  for (const [index, key] of pinnedThreadKeys.entries()) {
+    if (!rankByKey.has(key)) rankByKey.set(key, index);
+  }
+  const pinned: Array<{ thread: TThread; rank: number }> = [];
+  const rest: TThread[] = [];
+  for (const thread of threads) {
+    const rank = rankByKey.get(getThreadKey(thread));
+    if (rank !== undefined) {
+      pinned.push({ thread, rank });
+    } else {
+      rest.push(thread);
+    }
+  }
+  if (pinned.length === 0) return [...threads];
+  pinned.sort((left, right) => left.rank - right.rank);
+  return [...pinned.map((entry) => entry.thread), ...rest];
+}
+
+/**
  * Limits an expanded project folder to its most recent threads when auto-collapse is on,
- * while always keeping the currently active route thread visible.
+ * while always keeping project-pinned threads and the currently active route thread visible.
  */
 export function partitionProjectFolderThreads<TThread>(input: {
   readonly threads: readonly TThread[];
@@ -1112,14 +1142,27 @@ export function partitionProjectFolderThreads<TThread>(input: {
   readonly previewLimit: number;
   readonly tailExpanded: boolean;
   readonly routeThreadKey: string | null;
+  readonly pinnedThreadKeys?: ReadonlySet<string> | undefined;
 }): {
   readonly visibleThreads: readonly TThread[];
   readonly hiddenThreads: readonly TThread[];
   readonly canCollapseTail: boolean;
 } {
-  const { threads, getThreadKey, autoCollapseEnabled, previewLimit, tailExpanded, routeThreadKey } =
-    input;
-  if (!autoCollapseEnabled || previewLimit <= 0 || threads.length <= previewLimit) {
+  const {
+    threads,
+    getThreadKey,
+    autoCollapseEnabled,
+    previewLimit,
+    tailExpanded,
+    routeThreadKey,
+    pinnedThreadKeys,
+  } = input;
+  const pinnedCount =
+    pinnedThreadKeys && pinnedThreadKeys.size > 0
+      ? threads.filter((thread) => pinnedThreadKeys.has(getThreadKey(thread))).length
+      : 0;
+  const effectiveLimit = Math.max(previewLimit, pinnedCount);
+  if (!autoCollapseEnabled || previewLimit <= 0 || threads.length <= effectiveLimit) {
     return {
       visibleThreads: threads,
       hiddenThreads: [],
@@ -1133,8 +1176,17 @@ export function partitionProjectFolderThreads<TThread>(input: {
       canCollapseTail: true,
     };
   }
-  const visibleThreads = threads.slice(0, previewLimit);
+  const visibleThreads = threads.slice(0, effectiveLimit);
   const visibleKeys = new Set(visibleThreads.map(getThreadKey));
+  if (pinnedThreadKeys && pinnedThreadKeys.size > 0) {
+    for (const thread of threads) {
+      const key = getThreadKey(thread);
+      if (pinnedThreadKeys.has(key) && !visibleKeys.has(key)) {
+        visibleThreads.push(thread);
+        visibleKeys.add(key);
+      }
+    }
+  }
   if (routeThreadKey !== null && !visibleKeys.has(routeThreadKey)) {
     const routeThread = threads.find((thread) => getThreadKey(thread) === routeThreadKey);
     if (routeThread !== undefined) {
@@ -1148,6 +1200,59 @@ export function partitionProjectFolderThreads<TThread>(input: {
     hiddenThreads,
     canCollapseTail: false,
   };
+}
+
+export type ProjectFolderBucket = "pinned" | "open" | "archived";
+
+export function projectFolderBucket(group: {
+  readonly pinned: boolean;
+  readonly archived: boolean;
+}): ProjectFolderBucket {
+  if (group.archived) return "archived";
+  return group.pinned ? "pinned" : "open";
+}
+
+/**
+ * Computes a new manual project order by placing `sourceProjectKey` before or after
+ * `targetProjectKey` within the same bucket (pinned, open, or archived).
+ */
+export function planProjectFolderReorder<
+  TGroup extends {
+    readonly projectKey: string;
+    readonly pinned: boolean;
+    readonly archived: boolean;
+    readonly memberProjects: ReadonlyArray<TMember>;
+  },
+  TMember,
+>(input: {
+  readonly groups: readonly TGroup[];
+  readonly sourceProjectKey: string;
+  readonly targetProjectKey: string;
+  readonly placement: "before" | "after";
+  readonly getMemberOrderKey: (member: TMember) => string;
+}): string[] | null {
+  const { groups, sourceProjectKey, targetProjectKey, placement, getMemberOrderKey } = input;
+  if (sourceProjectKey === targetProjectKey) return null;
+  const sourceIndex = groups.findIndex((group) => group.projectKey === sourceProjectKey);
+  const targetIndex = groups.findIndex((group) => group.projectKey === targetProjectKey);
+  if (sourceIndex < 0 || targetIndex < 0) return null;
+  const sourceGroup = groups[sourceIndex]!;
+  const targetGroup = groups[targetIndex]!;
+  if (projectFolderBucket(sourceGroup) !== projectFolderBucket(targetGroup)) return null;
+
+  const reordered = [...groups];
+  const [moved] = reordered.splice(sourceIndex, 1);
+  if (!moved) return null;
+  const nextTargetIndex = reordered.findIndex((group) => group.projectKey === targetProjectKey);
+  if (nextTargetIndex < 0) return null;
+  const insertIndex = placement === "before" ? nextTargetIndex : nextTargetIndex + 1;
+  reordered.splice(insertIndex, 0, moved);
+
+  const unchanged = reordered.every(
+    (group, index) => group.projectKey === groups[index]?.projectKey,
+  );
+  if (unchanged) return null;
+  return reordered.flatMap((group) => group.memberProjects.map(getMemberOrderKey));
 }
 
 export type SidebarV2TopStatusKind =

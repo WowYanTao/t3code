@@ -88,4 +88,38 @@ describe("buildThreadActionMenuItems", () => {
     const items = buildThreadActionMenuItems({ ...baseState, canRename: false });
     expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(["rename"]);
   });
+
+  it("offers project-local and global pin transitions when projectPinning is supported", () => {
+    const unpinned = buildThreadActionMenuItems({
+      ...baseState,
+      supports: { ...baseState.supports, projectPinning: true },
+    });
+    expect(
+      unpinned
+        .filter((item) => item.id === "pin-project" || item.id === "pin")
+        .map((item) => item.id),
+    ).toEqual(["pin-project", "pin"]);
+
+    const projectPinned = buildThreadActionMenuItems({
+      ...baseState,
+      isProjectPinned: true,
+      supports: { ...baseState.supports, projectPinning: true },
+    });
+    expect(
+      projectPinned
+        .filter((item) => item.id === "unpin-project" || item.id === "pin")
+        .map((item) => item.id),
+    ).toEqual(["unpin-project", "pin"]);
+
+    const globalPinned = buildThreadActionMenuItems({
+      ...baseState,
+      isPinned: true,
+      supports: { ...baseState.supports, projectPinning: true },
+    });
+    expect(
+      globalPinned
+        .filter((item) => item.id === "unpin" || item.id === "pin-project")
+        .map((item) => item.id),
+    ).toEqual(["unpin", "pin-project"]);
+  });
 });

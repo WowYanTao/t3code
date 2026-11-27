@@ -1,5 +1,5 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
 import {
@@ -51,7 +51,7 @@ import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
-import { useClientSettings } from "./useSettings";
+import { getClientSettings, updateClientSettings, useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
@@ -88,6 +88,7 @@ export function useThreadActionMenu(input: {
     snoozeThread,
     unsnoozeThread,
     pinThread,
+    unpinThread,
     confirmAndUnpinThread,
     setThreadAutoSettle,
     archiveThread,
@@ -124,11 +125,15 @@ export function useThreadActionMenu(input: {
     if (!thread) return null;
     const now = new Date();
     const configLoaded = readEnvironmentServerConfigLoaded(threadRef.environmentId);
+    const clientSettings = getClientSettings();
+    const threadKey = scopedThreadKey(threadRef);
+    const isProjectPinned = clientSettings.sidebarProjectPinnedThreadKeys.includes(threadKey);
     const supports = {
       settlement: configLoaded,
       autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
       snooze: configLoaded,
       pinning: configLoaded,
+      projectPinning: clientSettings.boringSidebarEnabled,
       titleRegeneration: configLoaded,
     };
     const isRegeneratingTitle = thread.titleRegeneration != null;
@@ -141,6 +146,7 @@ export function useThreadActionMenu(input: {
       branch: thread.branch ?? null,
       projectFilter: null,
       isPinned: thread.pinnedAt != null,
+      isProjectPinned,
       isSettled: supports.settlement && thread.settledOverride === "settled",
       autoSettleEnabled: thread.autoSettleDisabledAt == null,
       isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
@@ -238,13 +244,42 @@ export function useThreadActionMenu(input: {
         case "unsnooze":
           await reportFailure(m(msg("Failed to wake thread")), () => unsnoozeThread(threadRef));
           return;
-        case "pin":
+        case "pin": {
+          const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
+          if (currentProjectPins.includes(threadKey)) {
+            void updateClientSettings({
+              sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
+            });
+          }
           await reportFailure(m(msg("Failed to pin thread")), () => pinThread(threadRef));
           return;
+        }
         case "unpin": {
           await reportFailure(m(msg("Failed to unpin thread")), () =>
             confirmAndUnpinThread(threadRef),
           );
+          return;
+        }
+        case "pin-project": {
+          if (thread.pinnedAt != null) {
+            await reportFailure(m(msg("Failed to unpin thread")), () => unpinThread(threadRef));
+          }
+          const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
+          void updateClientSettings({
+            sidebarProjectPinnedThreadKeys: [
+              threadKey,
+              ...currentProjectPins.filter((key) => key !== threadKey),
+            ],
+          });
+          return;
+        }
+        case "unpin-project": {
+          const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
+          if (currentProjectPins.includes(threadKey)) {
+            void updateClientSettings({
+              sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
+            });
+          }
           return;
         }
         case "auto-settle:enabled":

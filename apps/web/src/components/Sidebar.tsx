@@ -110,6 +110,7 @@ import { configuredHostedAppUrl } from "../hostedPairing";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { SidebarFolderDrop } from "./sidebar/SidebarFolderDrop";
 import {
+  getProjectOrderKey,
   pickableProjectGroups,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
@@ -137,7 +138,7 @@ import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { getClientSettings, updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -185,7 +186,10 @@ import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
   groupSidebarThreadsByProject,
+  orderProjectFolderThreads,
   partitionProjectFolderThreads,
+  planProjectFolderReorder,
+  projectFolderBucket,
   sidebarFolderExpansionKeys,
   buildBulkTitleRegenerationContextMenuItem,
   buildBulkUnpinContextMenuItem,
@@ -466,6 +470,8 @@ function useSidebarThreads(input: {
     (s) => s.sidebarProjectThreadAutoCollapseEnabled,
   );
   const projectThreadPreviewLimit = useClientSettings((s) => s.sidebarProjectThreadPreviewLimit);
+  const projectPinnedThreadKeys = useClientSettings((s) => s.sidebarProjectPinnedThreadKeys);
+  const projectPinnedThreadKeySet = new Set(projectPinnedThreadKeys);
   const [expandedProjectTailKeys, setExpandedProjectTailKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -558,13 +564,18 @@ function useSidebarThreads(input: {
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
           );
+          const orderedFolderThreads = orderProjectFolderThreads({
+            threads: folder.threads,
+            getThreadKey: threadShellKey,
+            pinnedThreadKeys: projectPinnedThreadKeys,
+          });
           if (collapsed) {
             return {
               group: folder.group,
               collapsed,
               // A closed folder still shows the open thread, and hints at the rest.
-              threads: routeThreadOnly(folder.threads, routeRowThreadKey),
-              hiddenThreads: folder.threads.filter(
+              threads: routeThreadOnly(orderedFolderThreads, routeRowThreadKey),
+              hiddenThreads: orderedFolderThreads.filter(
                 (thread) => threadShellKey(thread) !== routeRowThreadKey,
               ),
               hiddenTailThreads: EMPTY_THREADS,
@@ -572,12 +583,13 @@ function useSidebarThreads(input: {
             };
           }
           const partitioned = partitionProjectFolderThreads({
-            threads: folder.threads,
+            threads: orderedFolderThreads,
             getThreadKey: threadShellKey,
             autoCollapseEnabled: projectThreadAutoCollapseEnabled,
             previewLimit: projectThreadPreviewLimit,
             tailExpanded: expandedProjectTailKeys.has(folder.group.projectKey),
             routeThreadKey: routeRowThreadKey,
+            pinnedThreadKeys: projectPinnedThreadKeySet,
           });
           return {
             group: folder.group,
@@ -1058,6 +1070,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   });
   const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
   const folderRowsMultiline = useClientSettings((settings) => settings.boringSidebarMultilineRows);
+  const sidebarProjectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
+  const projectPinnedThreadKeys = useClientSettings(
+    (settings) => settings.sidebarProjectPinnedThreadKeys,
+  );
+  const projectPinnedThreadKeySet = new Set(projectPinnedThreadKeys);
+  const setProjectOrder = useUiStateStore((store) => store.setProjectOrder);
+  const [projectFolderDrag, setProjectFolderDrag] = useState<{
+    draggedKey: string;
+    overKey: string | null;
+    placement: "before" | "after";
+  } | null>(null);
   const newThreadContext = useHandleNewThread();
   // Row callbacks capture only the handler; the rest of the context changes with the route.
   const { handleNewThread } = newThreadContext;
@@ -1334,52 +1357,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const target = entry?.targetProject ?? group;
     void handleNewThread(scopeProjectRef(target.environmentId, target.id));
   });
-  const handleProjectFolderContextMenu = useStableCallback(
-    (
-      group: SidebarProjectSnapshot,
-      position: { x: number; y: number },
-      source: ContextMenuSource,
-    ) => {
-      const api = readLocalApi();
-      if (!api) return;
-      void (async () => {
-        const clicked = await settlePromise(() =>
-          api.contextMenu.show(
-            [
-              { id: "new-thread", label: gt("New thread") },
-              { id: "copy-path", label: gt("Copy path") },
-              ...(canPinProject(group)
-                ? [
-                    group.pinned
-                      ? { id: "unpin", label: gt("Unpin project"), icon: "pin-off" }
-                      : { id: "pin", label: gt("Pin project"), icon: "pin" },
-                  ]
-                : []),
-              { id: "project-settings", label: gt("Project settings"), icon: "settings" },
-            ],
-            position,
-            source,
-          ),
-        );
-        if (clicked._tag === "Failure") return;
-        switch (clicked.value) {
-          case "new-thread":
-            startThreadInProjectFolder(group);
-            return;
-          case "copy-path":
-            copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
-            return;
-          case "pin":
-          case "unpin":
-            setProjectGroupPinned(group, clicked.value === "pin");
-            return;
-          case "project-settings":
-            openProjectSettings(group);
-            return;
-        }
-      })();
-    },
-  );
 
   const {
     workingShelfEnabled,
@@ -1437,6 +1414,134 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     keepEmptyFolders: (group) =>
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
+  const orderedProjectGroupsForReorder = [
+    ...scopeGroups,
+    ...projectGroups.filter((project) => project.archived),
+  ];
+  const applyProjectFolderReorder = useStableCallback(
+    (sourceProjectKey: string, targetProjectKey: string, placement: "before" | "after") => {
+      const nextOrder = planProjectFolderReorder({
+        groups: orderedProjectGroupsForReorder,
+        sourceProjectKey,
+        targetProjectKey,
+        placement,
+        getMemberOrderKey: getProjectOrderKey,
+      });
+      if (nextOrder === null) return;
+      setProjectOrder(nextOrder);
+      if (sidebarProjectSortOrder !== "manual") {
+        void updateClientSettings({ sidebarProjectSortOrder: "manual" });
+      }
+    },
+  );
+  const handleProjectFolderDragStart = useStableCallback((projectKey: string) => {
+    setProjectFolderDrag({ draggedKey: projectKey, overKey: null, placement: "before" });
+  });
+  const handleProjectFolderDragHover = useStableCallback(
+    (projectKey: string, placement: "before" | "after") => {
+      setProjectFolderDrag((current) => {
+        if (current === null || current.draggedKey === projectKey) return current;
+        if (current.overKey === projectKey && current.placement === placement) return current;
+        return { ...current, overKey: projectKey, placement };
+      });
+    },
+  );
+  const handleProjectFolderDragLeave = useStableCallback((projectKey: string) => {
+    setProjectFolderDrag((current) =>
+      current && current.overKey === projectKey ? { ...current, overKey: null } : current,
+    );
+  });
+  const handleProjectFolderDrop = useStableCallback(
+    (targetProjectKey: string, placement: "before" | "after") => {
+      const draggedKey = projectFolderDrag?.draggedKey ?? null;
+      setProjectFolderDrag(null);
+      if (draggedKey === null) return;
+      applyProjectFolderReorder(draggedKey, targetProjectKey, placement);
+    },
+  );
+  const handleProjectFolderDragEnd = useStableCallback(() => {
+    setProjectFolderDrag(null);
+  });
+  const handleProjectFolderContextMenu = useStableCallback(
+    (
+      group: SidebarProjectSnapshot,
+      position: { x: number; y: number },
+      source: ContextMenuSource,
+    ) => {
+      const api = readLocalApi();
+      if (!api) return;
+      const bucket = projectFolderBucket(group);
+      const sameBucketFolders = (projectFolders ?? []).filter(
+        (folder) => projectFolderBucket(folder.group) === bucket,
+      );
+      const folderIndex = sameBucketFolders.findIndex(
+        (folder) => folder.group.projectKey === group.projectKey,
+      );
+      const canMoveUp = folderIndex > 0;
+      const canMoveDown = folderIndex >= 0 && folderIndex < sameBucketFolders.length - 1;
+      void (async () => {
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "new-thread", label: gt("New thread") },
+              { id: "copy-path", label: gt("Copy path") },
+              ...(canPinProject(group)
+                ? [
+                    group.pinned
+                      ? { id: "unpin", label: gt("Unpin project"), icon: "pin-off" }
+                      : { id: "pin", label: gt("Pin project"), icon: "pin" },
+                  ]
+                : []),
+              ...(canMoveUp
+                ? [
+                    { id: "move-top", label: gt("移到顶部") },
+                    { id: "move-up", label: gt("上移") },
+                  ]
+                : []),
+              ...(canMoveDown ? [{ id: "move-down", label: gt("下移") }] : []),
+              { id: "project-settings", label: gt("Project settings"), icon: "settings" },
+            ],
+            position,
+            source,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "new-thread":
+            startThreadInProjectFolder(group);
+            return;
+          case "copy-path":
+            copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
+            return;
+          case "pin":
+          case "unpin":
+            setProjectGroupPinned(group, clicked.value === "pin");
+            return;
+          case "move-top": {
+            const first = sameBucketFolders[0];
+            if (first)
+              applyProjectFolderReorder(group.projectKey, first.group.projectKey, "before");
+            return;
+          }
+          case "move-up": {
+            const previous = sameBucketFolders[folderIndex - 1];
+            if (previous) {
+              applyProjectFolderReorder(group.projectKey, previous.group.projectKey, "before");
+            }
+            return;
+          }
+          case "move-down": {
+            const next = sameBucketFolders[folderIndex + 1];
+            if (next) applyProjectFolderReorder(group.projectKey, next.group.projectKey, "after");
+            return;
+          }
+          case "project-settings":
+            openProjectSettings(group);
+            return;
+        }
+      })();
+    },
+  );
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -1981,6 +2086,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   }
   const attemptPin = (threadRef: ScopedThreadRef) => {
     void (async () => {
+      const threadKey = scopedThreadKey(threadRef);
+      const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
+      if (currentProjectPins.includes(threadKey)) {
+        void updateClientSettings({
+          sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
+        });
+      }
       const result = await pinThread(threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -1993,6 +2105,42 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         );
       }
     })();
+  };
+  const attemptPinToProject = (threadRef: ScopedThreadRef, currentlyGlobalPinned: boolean) => {
+    void (async () => {
+      if (currentlyGlobalPinned) {
+        const result = await unpinThread(threadRef);
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: gt("Failed to unpin thread"),
+                description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+              }),
+            );
+          }
+          return;
+        }
+      }
+      const threadKey = scopedThreadKey(threadRef);
+      const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
+      void updateClientSettings({
+        sidebarProjectPinnedThreadKeys: [
+          threadKey,
+          ...currentProjectPins.filter((key) => key !== threadKey),
+        ],
+      });
+    })();
+  };
+  const attemptUnpinFromProject = (threadRef: ScopedThreadRef) => {
+    const threadKey = scopedThreadKey(threadRef);
+    const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
+    if (!currentProjectPins.includes(threadKey)) return;
+    void updateClientSettings({
+      sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
+    });
   };
   const attemptUnpin = (threadRef: ScopedThreadRef) => {
     void (async () => {
@@ -2783,6 +2931,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     }
                   : null,
               isPinned,
+              isProjectPinned: projectPinnedThreadKeySet.has(scopedThreadKey(threadRef)),
               isSettled,
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
@@ -2800,6 +2949,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: configLoaded,
                 pinning: configLoaded,
+                projectPinning: boringSidebarEnabled,
                 titleRegeneration: configLoaded,
               },
               snoozePresets,
@@ -2879,6 +3029,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "unpin":
             attemptUnpin(threadRef);
+            return;
+          case "pin-project":
+            attemptPinToProject(threadRef, isPinned);
+            return;
+          case "unpin-project":
+            attemptUnpinFromProject(threadRef);
             return;
           case "turn-into-project": {
             const result = await turnThreadIntoProject(threadRef);
@@ -3607,8 +3763,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             settlementSupported={serverConfigs.has(thread.environmentId)}
                             snoozeSupported={serverConfigs.has(thread.environmentId)}
-                            pinningSupported={serverConfigs.has(thread.environmentId)}
-                            isPinned={thread.pinnedAt != null}
+                            pinningSupported={
+                              serverConfigs.has(thread.environmentId) ||
+                              (section === "active" && projectPinnedThreadKeySet.has(threadKey))
+                            }
+                            isPinned={
+                              thread.pinnedAt != null ||
+                              (section === "active" && projectPinnedThreadKeySet.has(threadKey))
+                            }
                             dropVerb={
                               dragState?.activeKey === threadKey
                                 ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)
@@ -3673,7 +3835,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             onUnsettle={attemptUnsettle}
                             onSnooze={attemptSnooze}
                             onUnsnooze={attemptUnsnooze}
-                            onUnpin={attemptUnpin}
+                            onUnpin={
+                              section === "active" &&
+                              thread.pinnedAt == null &&
+                              projectPinnedThreadKeySet.has(threadKey)
+                                ? attemptUnpinFromProject
+                                : attemptUnpin
+                            }
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}
                           />
@@ -3702,13 +3870,42 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           continue;
                         }
                         if (projectFolders !== null && item.marker === "active-placeholder") {
+                          const draggedFolder =
+                            projectFolderDrag === null
+                              ? null
+                              : (projectFolders.find(
+                                  (candidate) =>
+                                    candidate.group.projectKey === projectFolderDrag.draggedKey,
+                                ) ?? null);
+                          const draggedBucket = draggedFolder
+                            ? projectFolderBucket(draggedFolder.group)
+                            : null;
                           for (const folder of projectFolders) {
+                            const folderKey = folder.group.projectKey;
+                            const isDraggingFolder = projectFolderDrag?.draggedKey === folderKey;
+                            const canDropOnFolder =
+                              draggedBucket !== null &&
+                              !isDraggingFolder &&
+                              projectFolderBucket(folder.group) === draggedBucket;
+                            const dropPlacement =
+                              canDropOnFolder && projectFolderDrag?.overKey === folderKey
+                                ? projectFolderDrag.placement
+                                : null;
                             items.push(
                               <SidebarProjectFolderHeader
-                                key={`project-folder:${folder.group.projectKey}`}
+                                key={`project-folder:${folderKey}`}
                                 group={folder.group}
                                 collapsed={folder.collapsed}
                                 hiddenThreads={folder.hiddenThreads}
+                                reorderable={projectFolders.length > 1}
+                                isDragging={isDraggingFolder}
+                                canDrop={canDropOnFolder}
+                                dropPlacement={dropPlacement}
+                                onDragStart={handleProjectFolderDragStart}
+                                onDragHover={handleProjectFolderDragHover}
+                                onDragLeave={handleProjectFolderDragLeave}
+                                onDrop={handleProjectFolderDrop}
+                                onDragEnd={handleProjectFolderDragEnd}
                                 onToggle={toggleProjectFolder}
                                 onNewThread={startThreadInProjectFolder}
                                 onContextMenu={handleProjectFolderContextMenu}

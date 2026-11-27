@@ -3,7 +3,6 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
 import { readWorktreeBaseBranch } from "../../worktreeRepositoryChoiceStore";
-import { removeSidebarTodoThread } from "../../sidebarTodo";
 import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
 import {
   mergeDirectPreviewAnnotation,
@@ -1641,7 +1640,6 @@ export function useComposerSend(input: ComposerSendInput) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
         acknowledgeActiveThreadWoke();
-        removeSidebarTodoThread(scopedThreadKey(scopeThreadRef(environmentId, threadIdForSend)));
         // A draft still on screen finalizes once its thread route takes over.
         if (sentDraftThreadRef) {
           if (backgroundDraftOpened || currentRouteThreadKeyRef.current !== routeThreadKey) {

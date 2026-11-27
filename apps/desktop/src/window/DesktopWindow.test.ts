@@ -32,6 +32,12 @@ vi.mock("electron", async (importOriginal) => ({
       },
     ]),
   },
+  shell: {
+    readShortcutLink: vi.fn(() => {
+      throw new Error("ENOENT");
+    }),
+    writeShortcutLink: vi.fn(() => true),
+  },
 }));
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
@@ -220,14 +226,14 @@ const layerElectronTheme = Layer.succeed(ElectronTheme.ElectronTheme, {
   onUpdated: () => Effect.void,
 } satisfies ElectronTheme.ElectronTheme["Service"]);
 
-const layerDesktopEnvironmentFor = (platform: NodeJS.Platform) =>
+const layerDesktopEnvironmentFor = (platform: NodeJS.Platform, isDevelopment = true) =>
   DesktopEnvironment.layer({ ...environmentInput, platform }).pipe(
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
         DesktopConfig.layerTest({
           T3CODE_PORT: "3773",
-          VITE_DEV_SERVER_URL: "http://127.0.0.1:5733",
+          ...(isDevelopment ? { VITE_DEV_SERVER_URL: "http://127.0.0.1:5733" } : {}),
         }),
       ),
     ),
@@ -261,6 +267,7 @@ function layerTest(input: {
   readonly focusedWindow?: Electron.BrowserWindow;
   readonly fallbackWindow?: Electron.BrowserWindow;
   readonly platform?: NodeJS.Platform;
+  readonly isDevelopment?: boolean;
   readonly iconPaths?: DesktopAssets.DesktopIconPaths;
   readonly appearanceWindows?: ReadonlyArray<{
     readonly window: Electron.BrowserWindow;
@@ -354,9 +361,12 @@ function layerTest(input: {
           recordMetrics: () => Effect.void,
           shutdown: Effect.void,
         }),
-        input.platform === undefined
+        input.platform === undefined && input.isDevelopment === undefined
           ? layerDesktopEnvironment
-          : layerDesktopEnvironmentFor(input.platform),
+          : layerDesktopEnvironmentFor(
+              input.platform ?? environmentInput.platform,
+              input.isDevelopment ?? true,
+            ),
         layerDesktopAppSettings,
         layerDesktopClientSettings,
         layerDesktopServerExposure,
@@ -1888,6 +1898,48 @@ describe("DesktopWindow", () => {
         assert.equal(details?.appIconPath, icoPath);
         assert.equal(details?.appIconIndex, 0);
         assert.equal(details?.relaunchDisplayName, "Tao Code (Dev)");
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("writes Tao Code Start Menu shortcut on unpackaged win32 production windows", () =>
+    Effect.gen(function* () {
+      const writeShortcutLink = vi.mocked(Electron.shell.writeShortcutLink);
+      writeShortcutLink.mockClear();
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const icoPath = "D:\\repo\\assets\\custom\\tao-black-windows.ico";
+      const layer = layerTest({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        platform: "win32",
+        isDevelopment: false,
+        iconPaths: {
+          ico: Option.some(icoPath),
+          icns: Option.none(),
+          png: Option.none(),
+        },
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.ensureMain;
+
+        assert.equal(writeShortcutLink.mock.calls.length, 1);
+        const call = writeShortcutLink.mock.calls[0] as unknown as readonly [
+          string,
+          string,
+          Electron.ShortcutDetails,
+        ];
+        const [shortcutPath, operation, options] = call;
+        assert.match(shortcutPath, /Start Menu[\\/]Programs[\\/]Tao Code\.lnk$/);
+        assert.equal(operation, "replace");
+        assert.equal(options.icon, icoPath);
+        assert.equal(options.iconIndex, 0);
+        assert.equal(options.appUserModelId, "com.taocode.desktop");
+        assert.equal(options.description, "Tao Code");
       }).pipe(Effect.provide(layer));
     }),
   );

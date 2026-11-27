@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Windows Start Menu shortcut cleanup removes conflicting Electron.lnk synchronously alongside Electron.shell.writeShortcutLink.
+
+import * as NodeFS from "node:fs";
+
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -170,6 +174,66 @@ function getIconOption(
   });
 }
 
+function syncUnpackagedWindowsStartMenuShortcut(
+  icoPath: string,
+  environment: DesktopEnvironment.DesktopEnvironment["Service"],
+): void {
+  if (
+    environment.platform !== "win32" ||
+    environment.isPackaged ||
+    typeof Electron.shell?.writeShortcutLink !== "function"
+  ) {
+    return;
+  }
+
+  const startMenuProgramsDir = environment.path.join(
+    environment.appDataDirectory,
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+  );
+  const electronShortcutPath = environment.path.join(startMenuProgramsDir, "Electron.lnk");
+
+  // Windows taskbar resolves an AUMID's icon from Start Menu shortcuts before BrowserWindow.setIcon.
+  // Clear a conflicting Electron.lnk (default atom icon) so Tao Code.lnk owns our custom .ico.
+  if (typeof Electron.shell.readShortcutLink === "function") {
+    try {
+      const existing = Electron.shell.readShortcutLink(electronShortcutPath);
+      const matchesOurAumid = existing?.appUserModelId === environment.appUserModelId;
+      const matchesBareElectronExe =
+        typeof existing?.target === "string" &&
+        existing.target.toLowerCase() === process.execPath.toLowerCase() &&
+        (existing.args ?? "").trim().length === 0;
+      if (matchesOurAumid || matchesBareElectronExe) {
+        NodeFS.rmSync(electronShortcutPath, { force: true });
+      }
+    } catch {
+      // Electron.lnk is absent or unreadable.
+    }
+  }
+
+  if (environment.isDevelopment) {
+    return;
+  }
+
+  const mainEntryPath = environment.path.join(environment.dirname, "main.cjs");
+  const shortcutPath = environment.path.join(startMenuProgramsDir, "Tao Code.lnk");
+  try {
+    Electron.shell.writeShortcutLink(shortcutPath, "replace", {
+      target: process.execPath,
+      args: `"${mainEntryPath}"`,
+      cwd: environment.rootDir,
+      description: "Tao Code",
+      icon: icoPath,
+      iconIndex: 0,
+      appUserModelId: environment.appUserModelId,
+    });
+  } catch {
+    // Best effort; BrowserWindow.setIcon and setAppDetails still run.
+  }
+}
+
 function applyWindowsTaskbarIdentity(
   window: Electron.BrowserWindow,
   iconPaths: DesktopAssets.DesktopIconPaths,
@@ -179,6 +243,7 @@ function applyWindowsTaskbarIdentity(
     return;
   }
   const icoPath = iconPaths.ico.value;
+  syncUnpackagedWindowsStartMenuShortcut(icoPath, environment);
   if (typeof window.setIcon === "function") {
     window.setIcon(icoPath);
   }

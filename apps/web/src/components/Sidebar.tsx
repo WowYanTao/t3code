@@ -70,6 +70,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 
 import {
+  ActivityIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -190,9 +191,11 @@ import {
   groupSidebarThreadsByProject,
   orderProjectFolderThreads,
   partitionProjectFolderThreads,
+  partitionSidebarAttentionThreads,
   planProjectFolderReorder,
   projectFolderBucket,
   reorderProjectPinnedThreadKeys,
+  resolveThreadLastVisitedAt,
   sidebarFolderExpansionKeys,
   buildBulkTitleRegenerationContextMenuItem,
   buildBulkUnpinContextMenuItem,
@@ -487,6 +490,7 @@ function useSidebarThreads(input: {
   // Minute-quantized clocks would delay second-precise snooze wakes by up to a minute.
   const snoozeWakeClock = useSnoozeWakeClock(threads);
   const [settledShelfExpanded, setSettledShelfExpanded] = useState(false);
+  const [attentionPopoverOpen, setAttentionPopoverOpen] = useState(false);
   const [snoozedShelfExpanded, setSnoozedShelfExpanded] = useLocalStorage(
     SNOOZED_SHELF_EXPANDED_KEY,
     false,
@@ -641,6 +645,8 @@ function useSidebarThreads(input: {
       })),
     settledShelfExpanded,
     setSettledShelfExpanded,
+    attentionPopoverOpen,
+    setAttentionPopoverOpen,
     snoozedShelfExpanded,
     toggleSnoozedShelf: () => setSnoozedShelfExpanded((value) => !value),
     workingShelfExpanded,
@@ -1376,6 +1382,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     showMoreSettled,
     settledShelfExpanded,
     setSettledShelfExpanded,
+    attentionPopoverOpen,
+    setAttentionPopoverOpen,
     snoozedShelfExpanded,
     toggleSnoozedShelf,
     workingShelfExpanded,
@@ -2197,6 +2205,97 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
   };
   const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
+  const localLastVisitedAtById = useUiStateStore((store) => store.threadLastVisitedAtById);
+  const attentionPartition = partitionSidebarAttentionThreads({
+    threads: [...pinnedThreads, ...activeThreads, ...workingThreads],
+    getThreadKey: threadShellKey,
+    getLastVisitedAt: (thread) =>
+      resolveThreadLastVisitedAt(
+        thread.lastVisitedAt,
+        localLastVisitedAtById[threadShellKey(thread)],
+      ),
+  });
+  const attentionCount =
+    attentionPartition.runningThreads.length + attentionPartition.todoThreads.length;
+  const attentionDotClassName =
+    attentionPartition.dot === "attention"
+      ? "bg-warning"
+      : attentionPartition.dot === "failed"
+        ? "bg-error"
+        : attentionPartition.dot === "unread"
+          ? "bg-success"
+          : attentionPartition.dot === "working"
+            ? "bg-info"
+            : null;
+  const renderAttentionPopoverRow = (thread: EnvironmentThreadShell) => {
+    const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+    return (
+      <SortableThreadRow
+        key={threadKey}
+        sortableId={`attention-popover:${threadKey}`}
+        contextDrag={false}
+        sortableDisabled
+        thread={thread}
+        variant="slim"
+        showSlimStatus
+        variantAction="settle"
+        settlementSupported={serverConfigs.has(thread.environmentId)}
+        snoozeSupported={serverConfigs.has(thread.environmentId)}
+        pinningSupported={
+          serverConfigs.has(thread.environmentId) || projectPinnedThreadKeySet.has(threadKey)
+        }
+        isPinned={thread.pinnedAt != null || projectPinnedThreadKeySet.has(threadKey)}
+        dropVerb={null}
+        dragOverPinned={false}
+        sweepAction={actionSweep?.keys.has(threadKey) ? actionSweep.action : null}
+        snoozeWakeLabelText={null}
+        wokeAt={threadWokeAt(thread, { now: snoozeNow })}
+        isActive={routeRowThreadKey === threadKey}
+        isRouteThread={routeThreadKey === threadKey}
+        readOpensPullRequestsInRightPanel={readOpensPullRequestsInRightPanel}
+        jumpLabel={null}
+        environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
+        environmentMachine={environmentMachineById.get(thread.environmentId) ?? "server"}
+        project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
+        projectDisplayName={
+          projectDisplayNameByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
+        }
+        providerEntryByInstanceId={
+          providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+        }
+        timestampFormat={timestampFormat}
+        onThreadClick={(event, targetThread) => {
+          handleThreadClick(event, targetThread);
+          if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+            setAttentionPopoverOpen(false);
+          }
+        }}
+        onThreadActivate={(targetThread) => {
+          navigateToThread(targetThread);
+          setAttentionPopoverOpen(false);
+        }}
+        onStartRename={startThreadRename}
+        onRenameTitleChange={setRenamingTitle}
+        onCommitRename={commitThreadRename}
+        onCancelRename={cancelThreadRename}
+        isRenaming={renamingThreadKey === threadKey}
+        renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
+        onContextMenu={handleThreadContextMenu}
+        onSettle={attemptSettle}
+        onActionSweepStart={startActionSweep}
+        onUnsettle={attemptUnsettle}
+        onSnooze={attemptSnooze}
+        onUnsnooze={attemptUnsnooze}
+        onUnpin={
+          thread.pinnedAt == null && projectPinnedThreadKeySet.has(threadKey)
+            ? attemptUnpinFromProject
+            : attemptUnpin
+        }
+        onAcknowledgeWoke={acknowledgeWoke}
+        onFileDropThreads={handleThreadFileDrop}
+      />
+    );
+  };
   const sidebarListItemsFresh = ((): readonly SidebarListItem[] => {
     const rowsOf = (
       list: readonly EnvironmentThreadShell[],
@@ -4119,27 +4218,34 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ) : null}
         </SidebarGroup>
       </SidebarContent>
-      {!isSearchingThreads && (settledCount > 0 || settledShelfExpanded) ? (
+      {!isSearchingThreads ? (
         <div className="shrink-0 border-t border-sidebar-border/60 px-(--sidebar-content-inset) py-1">
-          <Popover open={settledShelfExpanded} onOpenChange={setSettledShelfExpanded}>
+          <Popover open={attentionPopoverOpen} onOpenChange={setAttentionPopoverOpen}>
             <PopoverTrigger
               render={
                 <button
                   type="button"
-                  data-sidebar-row="shelf:settled"
+                  data-sidebar-row="shelf:attention"
                   className={cn(
                     "flex h-8 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left text-xs font-medium text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    settledShelfExpanded && "bg-sidebar-row-hover text-sidebar-foreground",
+                    attentionPopoverOpen && "bg-sidebar-row-hover text-sidebar-foreground",
                   )}
                 />
               }
             >
-              <CheckIcon aria-hidden className="size-3.5 shrink-0" />
+              <ActivityIcon aria-hidden className="size-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                {gt("Settled", { $context: "sidebar section" })}
+                {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork sidebar attention hub */}
+                {"运行 / 待办"}
               </span>
+              {attentionDotClassName ? (
+                <span
+                  aria-hidden
+                  className={cn("size-1.5 shrink-0 rounded-full", attentionDotClassName)}
+                />
+              ) : null}
               <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
-                {settledCount}
+                {attentionCount}
               </span>
               <ChevronRightIcon aria-hidden className="size-3 shrink-0" />
             </PopoverTrigger>
@@ -4153,131 +4259,222 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             >
               <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
                 <span className="text-xs font-medium text-foreground">
-                  {gt("Settled", { $context: "sidebar section" })}
+                  {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork sidebar attention hub */}
+                  {"运行 / 待办"}
                 </span>
-                <span className="text-xs tabular-nums text-muted-foreground">{settledCount}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{attentionCount}</span>
               </div>
               <TooltipProvider
-                key="sidebar-settled-popover-tooltips-150"
+                key="sidebar-attention-popover-tooltips-150"
                 delay={150}
                 closeDelay={0}
                 timeout={400}
               >
                 <ScrollArea className="max-h-112" hideScrollbars scrollFade>
                   <ul className="flex flex-col gap-px p-1.5">
-                    {renderedSettledThreads.length === 0 ? (
+                    {attentionCount === 0 ? (
                       <li className="list-none px-2 py-6 text-center text-xs text-muted-foreground">
-                        {olderSettledShelf.loading ? gt("Loading") : gt("No threads found")}
+                        {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork sidebar attention hub */}
+                        {"暂无运行中或待办会话"}
                       </li>
                     ) : (
-                      renderedSettledThreads.map((thread) => {
-                        const threadKey = scopedThreadKey(
-                          scopeThreadRef(thread.environmentId, thread.id),
-                        );
-                        return (
-                          <SortableThreadRow
-                            key={threadKey}
-                            sortableId={`settled-popover:${threadKey}`}
-                            contextDrag={false}
-                            sortableDisabled
-                            thread={thread}
-                            variant="slim"
-                            variantAction="unsettle"
-                            settlementSupported={serverConfigs.has(thread.environmentId)}
-                            snoozeSupported={serverConfigs.has(thread.environmentId)}
-                            pinningSupported={serverConfigs.has(thread.environmentId)}
-                            isPinned={thread.pinnedAt != null}
-                            dropVerb={null}
-                            dragOverPinned={false}
-                            sweepAction={
-                              actionSweep?.keys.has(threadKey) ? actionSweep.action : null
-                            }
-                            snoozeWakeLabelText={null}
-                            wokeAt={threadWokeAt(thread, { now: snoozeNow })}
-                            isActive={routeRowThreadKey === threadKey}
-                            isRouteThread={routeThreadKey === threadKey}
-                            readOpensPullRequestsInRightPanel={readOpensPullRequestsInRightPanel}
-                            jumpLabel={null}
-                            environmentLabel={
-                              environmentLabelById.get(thread.environmentId) ?? null
-                            }
-                            environmentMachine={
-                              environmentMachineById.get(thread.environmentId) ?? "server"
-                            }
-                            project={
-                              projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
-                              null
-                            }
-                            projectDisplayName={
-                              projectDisplayNameByKey.get(
-                                `${thread.environmentId}:${thread.projectId}`,
-                              ) ?? null
-                            }
-                            providerEntryByInstanceId={
-                              providerEntriesByEnvironment.get(thread.environmentId) ??
-                              EMPTY_PROVIDER_ENTRIES
-                            }
-                            timestampFormat={timestampFormat}
-                            onThreadClick={(event, targetThread) => {
-                              handleThreadClick(event, targetThread);
-                              if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
-                                setSettledShelfExpanded(false);
-                              }
-                            }}
-                            onThreadActivate={(targetThread) => {
-                              navigateToThread(targetThread);
-                              setSettledShelfExpanded(false);
-                            }}
-                            onStartRename={startThreadRename}
-                            onRenameTitleChange={setRenamingTitle}
-                            onCommitRename={commitThreadRename}
-                            onCancelRename={cancelThreadRename}
-                            isRenaming={renamingThreadKey === threadKey}
-                            renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
-                            onContextMenu={handleThreadContextMenu}
-                            onSettle={attemptSettle}
-                            onActionSweepStart={startActionSweep}
-                            onUnsettle={attemptUnsettle}
-                            onSnooze={attemptSnooze}
-                            onUnsnooze={attemptUnsnooze}
-                            onUnpin={attemptUnpin}
-                            onAcknowledgeWoke={acknowledgeWoke}
-                            onFileDropThreads={handleThreadFileDrop}
-                          />
-                        );
-                      })
+                      <>
+                        {attentionPartition.runningThreads.length > 0 ? (
+                          <>
+                            <li className="flex list-none items-center justify-between px-2.5 pt-1 pb-0.5 text-2xs font-medium text-muted-foreground">
+                              <span>{gt("Working", { $context: "thread status" })}</span>
+                              <span className="tabular-nums">
+                                {attentionPartition.runningThreads.length}
+                              </span>
+                            </li>
+                            {attentionPartition.runningThreads.map(renderAttentionPopoverRow)}
+                          </>
+                        ) : null}
+                        {attentionPartition.todoThreads.length > 0 ? (
+                          <>
+                            <li
+                              className={cn(
+                                "flex list-none items-center justify-between px-2.5 pb-0.5 text-2xs font-medium text-muted-foreground",
+                                attentionPartition.runningThreads.length > 0 ? "pt-2.5" : "pt-1",
+                              )}
+                            >
+                              <span>
+                                {/* oxlint-disable-next-line t3code/no-untranslated-copy -- personal fork sidebar attention hub */}
+                                {"待办"}
+                              </span>
+                              <span className="tabular-nums">
+                                {attentionPartition.todoThreads.length}
+                              </span>
+                            </li>
+                            {attentionPartition.todoThreads.map(renderAttentionPopoverRow)}
+                          </>
+                        ) : null}
+                      </>
                     )}
-                    {hiddenSettledCount > 0 ? (
-                      <li className="list-none">
-                        <button
-                          type="button"
-                          aria-disabled={olderSettledShelf.loading}
-                          onClick={() => {
-                            if (olderSettledShelf.loading) return;
-                            olderSettledShelf.retry();
-                            showMoreSettled();
-                          }}
-                          className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground aria-disabled:cursor-default"
-                        >
-                          <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
-                          {olderSettledShelf.loading
-                            ? gt("Loading")
-                            : olderSettledShelf.failed
-                              ? gt("Could not load older threads. Retry")
-                              : gt(
-                                  "{count, plural, one {Show {count} more} other {Show {count} more}}",
-                                  {
-                                    count: Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT),
-                                  },
-                                )}
-                        </button>
-                      </li>
-                    ) : null}
                   </ul>
                 </ScrollArea>
               </TooltipProvider>
             </PopoverPopup>
           </Popover>
+          {settledCount > 0 || settledShelfExpanded ? (
+            <Popover open={settledShelfExpanded} onOpenChange={setSettledShelfExpanded}>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    data-sidebar-row="shelf:settled"
+                    className={cn(
+                      "flex h-8 w-full cursor-pointer items-center gap-2 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left text-xs font-medium text-sidebar-muted-foreground outline-none transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      settledShelfExpanded && "bg-sidebar-row-hover text-sidebar-foreground",
+                    )}
+                  />
+                }
+              >
+                <CheckIcon aria-hidden className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {gt("Settled", { $context: "sidebar section" })}
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
+                  {settledCount}
+                </span>
+                <ChevronRightIcon aria-hidden className="size-3 shrink-0" />
+              </PopoverTrigger>
+              <PopoverPopup
+                side="right"
+                align="end"
+                sideOffset={8}
+                width="md"
+                padding="none"
+                className="overflow-hidden"
+              >
+                <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                  <span className="text-xs font-medium text-foreground">
+                    {gt("Settled", { $context: "sidebar section" })}
+                  </span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{settledCount}</span>
+                </div>
+                <TooltipProvider
+                  key="sidebar-settled-popover-tooltips-150"
+                  delay={150}
+                  closeDelay={0}
+                  timeout={400}
+                >
+                  <ScrollArea className="max-h-112" hideScrollbars scrollFade>
+                    <ul className="flex flex-col gap-px p-1.5">
+                      {renderedSettledThreads.length === 0 ? (
+                        <li className="list-none px-2 py-6 text-center text-xs text-muted-foreground">
+                          {olderSettledShelf.loading ? gt("Loading") : gt("No threads found")}
+                        </li>
+                      ) : (
+                        renderedSettledThreads.map((thread) => {
+                          const threadKey = scopedThreadKey(
+                            scopeThreadRef(thread.environmentId, thread.id),
+                          );
+                          return (
+                            <SortableThreadRow
+                              key={threadKey}
+                              sortableId={`settled-popover:${threadKey}`}
+                              contextDrag={false}
+                              sortableDisabled
+                              thread={thread}
+                              variant="slim"
+                              variantAction="unsettle"
+                              settlementSupported={serverConfigs.has(thread.environmentId)}
+                              snoozeSupported={serverConfigs.has(thread.environmentId)}
+                              pinningSupported={serverConfigs.has(thread.environmentId)}
+                              isPinned={thread.pinnedAt != null}
+                              dropVerb={null}
+                              dragOverPinned={false}
+                              sweepAction={
+                                actionSweep?.keys.has(threadKey) ? actionSweep.action : null
+                              }
+                              snoozeWakeLabelText={null}
+                              wokeAt={threadWokeAt(thread, { now: snoozeNow })}
+                              isActive={routeRowThreadKey === threadKey}
+                              isRouteThread={routeThreadKey === threadKey}
+                              readOpensPullRequestsInRightPanel={readOpensPullRequestsInRightPanel}
+                              jumpLabel={null}
+                              environmentLabel={
+                                environmentLabelById.get(thread.environmentId) ?? null
+                              }
+                              environmentMachine={
+                                environmentMachineById.get(thread.environmentId) ?? "server"
+                              }
+                              project={
+                                projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
+                                null
+                              }
+                              projectDisplayName={
+                                projectDisplayNameByKey.get(
+                                  `${thread.environmentId}:${thread.projectId}`,
+                                ) ?? null
+                              }
+                              providerEntryByInstanceId={
+                                providerEntriesByEnvironment.get(thread.environmentId) ??
+                                EMPTY_PROVIDER_ENTRIES
+                              }
+                              timestampFormat={timestampFormat}
+                              onThreadClick={(event, targetThread) => {
+                                handleThreadClick(event, targetThread);
+                                if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                                  setSettledShelfExpanded(false);
+                                }
+                              }}
+                              onThreadActivate={(targetThread) => {
+                                navigateToThread(targetThread);
+                                setSettledShelfExpanded(false);
+                              }}
+                              onStartRename={startThreadRename}
+                              onRenameTitleChange={setRenamingTitle}
+                              onCommitRename={commitThreadRename}
+                              onCancelRename={cancelThreadRename}
+                              isRenaming={renamingThreadKey === threadKey}
+                              renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
+                              onContextMenu={handleThreadContextMenu}
+                              onSettle={attemptSettle}
+                              onActionSweepStart={startActionSweep}
+                              onUnsettle={attemptUnsettle}
+                              onSnooze={attemptSnooze}
+                              onUnsnooze={attemptUnsnooze}
+                              onUnpin={attemptUnpin}
+                              onAcknowledgeWoke={acknowledgeWoke}
+                              onFileDropThreads={handleThreadFileDrop}
+                            />
+                          );
+                        })
+                      )}
+                      {hiddenSettledCount > 0 ? (
+                        <li className="list-none">
+                          <button
+                            type="button"
+                            aria-disabled={olderSettledShelf.loading}
+                            onClick={() => {
+                              if (olderSettledShelf.loading) return;
+                              olderSettledShelf.retry();
+                              showMoreSettled();
+                            }}
+                            className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground aria-disabled:cursor-default"
+                          >
+                            <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
+                            {olderSettledShelf.loading
+                              ? gt("Loading")
+                              : olderSettledShelf.failed
+                                ? gt("Could not load older threads. Retry")
+                                : gt(
+                                    "{count, plural, one {Show {count} more} other {Show {count} more}}",
+                                    {
+                                      count: Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT),
+                                    },
+                                  )}
+                          </button>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </ScrollArea>
+                </TooltipProvider>
+              </PopoverPopup>
+            </Popover>
+          ) : null}
         </div>
       ) : null}
       <SidebarChromeFooter />

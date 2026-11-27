@@ -605,6 +605,7 @@ type SidebarThreadRowProps = {
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's environment and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
+  showSlimStatus?: boolean | undefined;
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -1327,6 +1328,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     const multiline = variant === "folder-multiline";
     const inFolder = variant === "folder" || multiline;
     const isActivePinnedSlim = !inFolder && props.isPinned && variantAction === "settle";
+    const showRichSlim = isActivePinnedSlim || props.showSlimStatus === true;
     return (
       <li
         data-thread-item={threadKey}
@@ -1375,7 +1377,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 <span
                   className={cn(
                     "flex shrink-0 items-center transition-opacity",
-                    !isActivePinnedSlim &&
+                    !showRichSlim &&
                       (!props.isActive || variantAction === "unsettle") &&
                       "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                   )}
@@ -1393,7 +1395,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {multiline ? titleLineIcons : null}
               {multiline ? null : terminalStatusIcon}
               {multiline ? null : issueBadge}
-              {isActivePinnedSlim ? (
+              {showRichSlim ? (
                 <span
                   aria-hidden
                   className="pointer-events-none inline-flex shrink-0 items-center gap-1"
@@ -1456,7 +1458,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           <T>Dismiss Woke notification</T>
                         </TooltipPopup>
                       </Tooltip>
-                    ) : (inFolder || isActivePinnedSlim) && topStatus ? (
+                    ) : (inFolder || showRichSlim) && topStatus ? (
                       // Folder rows have no status line, so the status takes the time slot.
                       <span
                         className={cn(

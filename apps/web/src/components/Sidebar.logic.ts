@@ -1051,6 +1051,75 @@ export function resolveSidebarFolderDot(
   return null;
 }
 
+type SidebarAttentionBucket = "running" | "todo";
+
+function classifySidebarAttentionThread(
+  thread: ThreadStatusInput & SidebarThreadStatusInput,
+): SidebarAttentionBucket | null {
+  const status = resolveSidebarRowStatus(thread);
+  if (
+    status === "preparing" ||
+    status === "working" ||
+    (status === "waiting" && thread.runtime?.status === "running")
+  ) {
+    return "running";
+  }
+  if (
+    status === "approval" ||
+    status === "input" ||
+    status === "request" ||
+    status === "limited" ||
+    status === "failed"
+  ) {
+    return "todo";
+  }
+  if (status === "ready" && hasUnseenCompletion(thread)) {
+    return "todo";
+  }
+  return null;
+}
+
+export function partitionSidebarAttentionThreads<
+  TThread extends ThreadStatusInput & SidebarThreadStatusInput,
+>(input: {
+  readonly threads: readonly TThread[];
+  readonly getThreadKey: (thread: TThread) => string;
+  readonly getLastVisitedAt?: (thread: TThread) => string | undefined;
+}): {
+  readonly runningThreads: readonly TThread[];
+  readonly todoThreads: readonly TThread[];
+  readonly dot: "attention" | "failed" | "unread" | "working" | null;
+} {
+  const runningThreads: TThread[] = [];
+  const todoThreads: TThread[] = [];
+  const seen = new Set<string>();
+  const normalized: Array<ThreadStatusInput & SidebarThreadStatusInput> = [];
+
+  for (const thread of input.threads) {
+    const key = input.getThreadKey(thread);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const resolvedThread =
+      input.getLastVisitedAt === undefined
+        ? thread
+        : { ...thread, lastVisitedAt: input.getLastVisitedAt(thread) };
+    const bucket = classifySidebarAttentionThread(resolvedThread);
+    if (bucket === "running") {
+      runningThreads.push(thread);
+      normalized.push(resolvedThread);
+    } else if (bucket === "todo") {
+      todoThreads.push(thread);
+      normalized.push(resolvedThread);
+    }
+  }
+
+  return {
+    runningThreads,
+    todoThreads,
+    dot: normalized.length > 0 ? resolveSidebarFolderDot(normalized) : null,
+  };
+}
+
 /**
  * Keys the old per-project sidebar saved folder open state under, most
  * specific first, for `resolveProjectExpanded`. Boring folders read and write

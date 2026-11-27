@@ -39,6 +39,7 @@ import {
   groupSidebarThreadsByProject,
   orderProjectFolderThreads,
   partitionProjectFolderThreads,
+  partitionSidebarAttentionThreads,
   reorderProjectPinnedThreadKeys,
   planProjectFolderReorder,
   projectFolderBucket,
@@ -2016,6 +2017,64 @@ describe("resolveSidebarFolderDot", () => {
     expect(resolveSidebarFolderDot([idle, working])).toBe("working");
     expect(resolveSidebarFolderDot([working, unread])).toBe("unread");
     expect(resolveSidebarFolderDot([unread, limited])).toBe("attention");
+  });
+});
+
+describe("partitionSidebarAttentionThreads", () => {
+  it("groups running and unread/actionable todo threads while ignoring quiet idle threads", () => {
+    const runtime = {
+      status: "running" as const,
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: "Codex",
+      lastError: null,
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    };
+    const base = {
+      hasActionableProposedPlan: false,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      interactionMode: "default" as const,
+      latestRun: makeLatestRun(),
+      lastVisitedAt: "2026-03-09T10:06:00.000Z",
+      runtime: null,
+    };
+    const running = { key: "running", ...base, runtime };
+    const unreadDone = { key: "unread-done", ...base, lastVisitedAt: "2026-03-09T10:04:00.000Z" };
+    const approval = { key: "approval", ...base, hasPendingApprovals: true };
+    const quietIdle = { key: "quiet", ...base };
+    const quietWaiting = {
+      key: "waiting-idle",
+      ...base,
+      lastVisitedAt: "2026-03-09T10:04:00.000Z",
+      runtime: { ...runtime, status: "idle" as const },
+    };
+
+    const result = partitionSidebarAttentionThreads({
+      threads: [running, unreadDone, approval, quietIdle, quietWaiting, running],
+      getThreadKey: (thread) => thread.key,
+    });
+
+    expect(result.runningThreads.map((t) => t.key)).toEqual(["running"]);
+    expect(result.todoThreads.map((t) => t.key)).toEqual(["unread-done", "approval"]);
+    expect(result.dot).toBe("attention");
+
+    const onlyDone = partitionSidebarAttentionThreads({
+      threads: [unreadDone, quietIdle],
+      getThreadKey: (thread) => thread.key,
+    });
+    expect(onlyDone.runningThreads).toEqual([]);
+    expect(onlyDone.todoThreads.map((t) => t.key)).toEqual(["unread-done"]);
+    expect(onlyDone.dot).toBe("unread");
+
+    const visitedDone = partitionSidebarAttentionThreads({
+      threads: [unreadDone],
+      getThreadKey: (thread) => thread.key,
+      getLastVisitedAt: () => "2026-03-09T10:06:00.000Z",
+    });
+    expect(visitedDone.runningThreads).toEqual([]);
+    expect(visitedDone.todoThreads).toEqual([]);
+    expect(visitedDone.dot).toBeNull();
   });
 });
 

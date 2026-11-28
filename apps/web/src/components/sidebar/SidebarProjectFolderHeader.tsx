@@ -12,7 +12,7 @@ import { useUiStateStore } from "../../uiStateStore";
 import { resolveSidebarFolderDot, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const FOLDER_DOT_CLASS_NAME = {
   attention: "bg-warning",
@@ -177,47 +177,47 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
       {/* Sits over the count, which hides on hover or focus, and left of the chevron. */}
       <span className="pointer-events-none absolute inset-y-0 right-6 flex items-center gap-0.5">
         <span className="pointer-events-auto opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
-          <Tooltip>
-            <TooltipTrigger
+          <SharedTooltipTrigger
+            render={
+              <Button
+                data-sidebar-action-for={rowId}
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label={gt("New thread in {project}", { project: group.displayName })}
+                onClick={() => props.onNewThread(group)}
+              />
+            }
+            label={
+              <>
+                <T>
+                  New thread in <Var>{group.displayName}</Var>
+                </T>
+              </>
+            }
+          >
+            <SquarePenIcon aria-hidden />
+          </SharedTooltipTrigger>
+        </span>
+        {!collapsed && props.canCollapseTail && props.onCollapseTail ? (
+          <span className="pointer-events-auto">
+            <SharedTooltipTrigger
               render={
                 <Button
                   data-sidebar-action-for={rowId}
                   size="icon-xs"
                   variant="ghost-muted"
-                  aria-label={gt("New thread in {project}", { project: group.displayName })}
-                  onClick={() => props.onNewThread(group)}
+                  aria-label={gt("Show less")}
+                  onClick={() => props.onCollapseTail?.(group.projectKey)}
                 />
               }
+              label={
+                <>
+                  <T>Show less</T>
+                </>
+              }
             >
-              <SquarePenIcon aria-hidden />
-            </TooltipTrigger>
-            <TooltipPopup>
-              <T>
-                New thread in <Var>{group.displayName}</Var>
-              </T>
-            </TooltipPopup>
-          </Tooltip>
-        </span>
-        {!collapsed && props.canCollapseTail && props.onCollapseTail ? (
-          <span className="pointer-events-auto">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    data-sidebar-action-for={rowId}
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label={gt("Show less")}
-                    onClick={() => props.onCollapseTail?.(group.projectKey)}
-                  />
-                }
-              >
-                <ChevronsDownUpIcon aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup>
-                <T>Show less</T>
-              </TooltipPopup>
-            </Tooltip>
+              <ChevronsDownUpIcon aria-hidden />
+            </SharedTooltipTrigger>
           </span>
         ) : null}
       </span>

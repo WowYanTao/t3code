@@ -142,7 +142,7 @@ import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
-import { getClientSettings, updateClientSettings, useClientSettings } from "../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -283,7 +283,14 @@ import {
   usePromotingDraftThreadKeys,
 } from "../composerDraftStore";
 import { useShownThreadRouteTarget } from "../hooks/useShownThreadRouteTarget";
-import { toggleSidebarTodoThread } from "../sidebarTodo";
+import {
+  pinSidebarProjectThread,
+  setSidebarProjectPinnedThreadKeys,
+  toggleSidebarTodoThread,
+  unpinSidebarProjectThread,
+  useSidebarProjectPinnedThreadKeys,
+  useSidebarTodoThreadKeys,
+} from "../sidebarTodo";
 import {
   SidebarSearchResultRow,
   SortableThreadRow,
@@ -482,7 +489,7 @@ function useSidebarThreads(input: {
     (s) => s.sidebarProjectThreadAutoCollapseEnabled,
   );
   const projectThreadPreviewLimit = useClientSettings((s) => s.sidebarProjectThreadPreviewLimit);
-  const projectPinnedThreadKeys = useClientSettings((s) => s.sidebarProjectPinnedThreadKeys);
+  const projectPinnedThreadKeys = useSidebarProjectPinnedThreadKeys();
   const projectPinnedThreadKeySet = new Set(projectPinnedThreadKeys);
   const [expandedProjectTailKeys, setExpandedProjectTailKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -1093,11 +1100,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
   const folderRowsMultiline = useClientSettings((settings) => settings.boringSidebarMultilineRows);
   const sidebarProjectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
-  const projectPinnedThreadKeys = useClientSettings(
-    (settings) => settings.sidebarProjectPinnedThreadKeys,
-  );
+  const projectPinnedThreadKeys = useSidebarProjectPinnedThreadKeys();
   const projectPinnedThreadKeySet = new Set(projectPinnedThreadKeys);
-  const manualTodoThreadKeys = useClientSettings((settings) => settings.sidebarTodoThreadKeys);
+  const manualTodoThreadKeys = useSidebarTodoThreadKeys();
   const manualTodoThreadKeySet = new Set(manualTodoThreadKeys);
   const setProjectOrder = useUiStateStore((store) => store.setProjectOrder);
   const [projectFolderDrag, setProjectFolderDrag] = useState<{
@@ -2123,13 +2128,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   }
   const attemptPin = (threadRef: ScopedThreadRef) => {
     void (async () => {
-      const threadKey = scopedThreadKey(threadRef);
-      const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
-      if (currentProjectPins.includes(threadKey)) {
-        void updateClientSettings({
-          sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
-        });
-      }
+      unpinSidebarProjectThread(scopedThreadKey(threadRef));
       const result = await pinThread(threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -2161,23 +2160,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
       }
-      const threadKey = scopedThreadKey(threadRef);
-      const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
-      void updateClientSettings({
-        sidebarProjectPinnedThreadKeys: [
-          threadKey,
-          ...currentProjectPins.filter((key) => key !== threadKey),
-        ],
-      });
+      pinSidebarProjectThread(scopedThreadKey(threadRef));
     })();
   };
   const attemptUnpinFromProject = (threadRef: ScopedThreadRef) => {
-    const threadKey = scopedThreadKey(threadRef);
-    const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
-    if (!currentProjectPins.includes(threadKey)) return;
-    void updateClientSettings({
-      sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
-    });
+    unpinSidebarProjectThread(scopedThreadKey(threadRef));
   };
   const attemptToggleTodo = (threadRef: ScopedThreadRef) => {
     toggleSidebarTodoThread(scopedThreadKey(threadRef));
@@ -2573,7 +2560,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             overKey,
           });
           if (nextPinnedKeys !== null) {
-            updateClientSettings({ sidebarProjectPinnedThreadKeys: nextPinnedKeys });
+            setSidebarProjectPinnedThreadKeys(nextPinnedKeys);
           }
         }
         return;

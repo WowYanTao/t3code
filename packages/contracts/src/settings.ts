@@ -1681,6 +1681,13 @@ export const ServerSettings = Schema.Struct({
 
   /** Sent by the Usage tab with each summary request to this environment; edit in settings.json. Invalid values are ignored. */
   usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
+
+  sidebarTodoThreadIds: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  sidebarProjectPinnedThreadIds: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -2072,6 +2079,9 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+
+  sidebarTodoThreadIds: Schema.optionalKey(Schema.Array(Schema.String)),
+  sidebarProjectPinnedThreadIds: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

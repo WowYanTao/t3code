@@ -51,8 +51,14 @@ import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
-import { getClientSettings, updateClientSettings, useClientSettings } from "./useSettings";
-import { toggleSidebarTodoThread } from "../sidebarTodo";
+import { getClientSettings, useClientSettings } from "./useSettings";
+import {
+  isSidebarProjectPinnedThread,
+  isSidebarTodoThread,
+  pinSidebarProjectThread,
+  toggleSidebarTodoThread,
+  unpinSidebarProjectThread,
+} from "../sidebarTodo";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
 
 function failureToast(title: string, error: unknown) {
@@ -128,8 +134,8 @@ export function useThreadActionMenu(input: {
     const configLoaded = readEnvironmentServerConfigLoaded(threadRef.environmentId);
     const clientSettings = getClientSettings();
     const threadKey = scopedThreadKey(threadRef);
-    const isProjectPinned = clientSettings.sidebarProjectPinnedThreadKeys.includes(threadKey);
-    const isTodo = clientSettings.sidebarTodoThreadKeys.includes(threadKey);
+    const isProjectPinned = isSidebarProjectPinnedThread(threadKey);
+    const isTodo = isSidebarTodoThread(threadKey);
     const supports = {
       settlement: configLoaded,
       autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
@@ -248,12 +254,7 @@ export function useThreadActionMenu(input: {
           await reportFailure(m(msg("Failed to wake thread")), () => unsnoozeThread(threadRef));
           return;
         case "pin": {
-          const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
-          if (currentProjectPins.includes(threadKey)) {
-            void updateClientSettings({
-              sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
-            });
-          }
+          unpinSidebarProjectThread(threadKey);
           await reportFailure(m(msg("Failed to pin thread")), () => pinThread(threadRef));
           return;
         }
@@ -267,22 +268,11 @@ export function useThreadActionMenu(input: {
           if (thread.pinnedAt != null) {
             await reportFailure(m(msg("Failed to unpin thread")), () => unpinThread(threadRef));
           }
-          const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
-          void updateClientSettings({
-            sidebarProjectPinnedThreadKeys: [
-              threadKey,
-              ...currentProjectPins.filter((key) => key !== threadKey),
-            ],
-          });
+          pinSidebarProjectThread(threadKey);
           return;
         }
         case "unpin-project": {
-          const currentProjectPins = getClientSettings().sidebarProjectPinnedThreadKeys;
-          if (currentProjectPins.includes(threadKey)) {
-            void updateClientSettings({
-              sidebarProjectPinnedThreadKeys: currentProjectPins.filter((key) => key !== threadKey),
-            });
-          }
+          unpinSidebarProjectThread(threadKey);
           return;
         }
         case "add-todo":

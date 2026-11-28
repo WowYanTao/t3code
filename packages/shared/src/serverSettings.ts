@@ -612,6 +612,12 @@ export function applyServerSettingsPatch(
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
       : {}),
+    ...(patch.sidebarTodoThreadIds !== undefined
+      ? { sidebarTodoThreadIds: patch.sidebarTodoThreadIds }
+      : {}),
+    ...(patch.sidebarProjectPinnedThreadIds !== undefined
+      ? { sidebarProjectPinnedThreadIds: patch.sidebarProjectPinnedThreadIds }
+      : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {
           usageLimitSources: mergeSettingsEntries(

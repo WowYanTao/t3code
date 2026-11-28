@@ -257,7 +257,7 @@ import { BookmarkIcon, BuildingIcon, PlayIcon, ReplyIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { assistantCitationLabel } from "@t3tools/shared/assistantCitations";
 import { assistantCitationNavigation } from "../../lib/assistantCitationNavigation";
-import { toggleSidebarTodoThread } from "../../sidebarTodo";
+import { toggleSidebarTodoThread, useSidebarTodoThreadKeys } from "../../sidebarTodo";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Spinner } from "../ui/spinner";
@@ -3653,8 +3653,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     routeKind === "server" && activeThreadId != null
       ? scopedThreadKey(scopeThreadRef(environmentId, activeThreadId))
       : null;
+  const sidebarTodoThreadKeys = useSidebarTodoThreadKeys();
   const isActiveThreadManualTodo =
-    activeTodoThreadKey !== null && settings.sidebarTodoThreadKeys.includes(activeTodoThreadKey);
+    activeTodoThreadKey !== null && sidebarTodoThreadKeys.includes(activeTodoThreadKey);
   const composerTodoButton =
     activeTodoThreadKey !== null ? (
       <Tooltip>

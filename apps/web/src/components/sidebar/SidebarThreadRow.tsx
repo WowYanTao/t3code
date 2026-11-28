@@ -1487,7 +1487,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         )}
                       >
                         <TopStatusIcon icon={topStatus.icon} className="size-3" />
-                        {topStatus.label}
+                        {topStatus.icon === "todo" &&
+                        resolveThreadActivityTimestamp(thread) !== null ? (
+                          <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
+                        ) : (
+                          topStatus.label
+                        )}
                       </span>
                     ) : (
                       <span className="text-xs">

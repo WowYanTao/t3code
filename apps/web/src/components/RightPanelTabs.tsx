@@ -71,7 +71,7 @@ import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import { linkedThreadTitle } from "~/linkedThreadSurface";
 import type { RightPanelSurface } from "~/rightPanelStore";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { issueStatePresentation } from "~/components/issue/issuePresentation";
 import { issueEnvironment } from "~/state/issues";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
@@ -986,26 +986,39 @@ function RightPanelTab(
         ? sideChatShell.title
         : formatSubagentDisplayTitle(sideChatShell.title);
   const sideChatState = sideChatTabState(sideChatShell);
+  const closeOnLeft = isMacPlatform(navigator.platform);
+  const tabIcon = (
+    <>
+      <SurfaceIcon
+        surface={surface}
+        previewUrl={props.previewUrl}
+        previewCapturedUrl={props.previewCapturedUrl}
+        theme={props.theme}
+        environmentId={props.environmentId}
+        pullRequestStatusSeed={props.pullRequestStatusSeed}
+      />
+      {props.pending ? (
+        <span
+          className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+          aria-hidden
+        />
+      ) : null}
+    </>
+  );
   const content = (
     <>
-      <span className="relative flex size-4 shrink-0 items-center justify-center">
-        <span className="relative flex size-3 items-center justify-center">
-          <SurfaceIcon
-            surface={surface}
-            previewUrl={props.previewUrl}
-            previewCapturedUrl={props.previewCapturedUrl}
-            theme={props.theme}
-            environmentId={props.environmentId}
-            pullRequestStatusSeed={props.pullRequestStatusSeed}
-          />
-          {props.pending ? (
-            <span
-              className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
-              aria-hidden
-            />
-          ) : null}
+      {closeOnLeft ? (
+        <PanelTabCloseButton
+          label={gt("Close {title}", { title })}
+          onClick={() => onClose(surface)}
+        >
+          {tabIcon}
+        </PanelTabCloseButton>
+      ) : (
+        <span className="relative flex size-4 shrink-0 items-center justify-center">
+          <span className="relative flex size-3 items-center justify-center">{tabIcon}</span>
         </span>
-      </span>
+      )}
       {audio === "none" || !audioRuntimeTabId ? null : (
         <SharedTooltipTrigger
           render={
@@ -1087,11 +1100,13 @@ function RightPanelTab(
           }
         />
       )}
-      <PanelTabCloseButton
-        active={props.active}
-        label={gt("Close {title}", { title })}
-        onClick={() => onClose(surface)}
-      />
+      {closeOnLeft ? null : (
+        <PanelTabCloseButton
+          active={props.active}
+          label={gt("Close {title}", { title })}
+          onClick={() => onClose(surface)}
+        />
+      )}
     </>
   );
   return (
@@ -1105,7 +1120,8 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-1 pl-1.5 text-xs",
+        "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pl-1.5 text-xs",
+        closeOnLeft ? "pr-2" : "pr-1",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-accent text-foreground"

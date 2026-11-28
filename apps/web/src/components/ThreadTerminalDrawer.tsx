@@ -55,7 +55,7 @@ import { Button } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
 import {
   GhosttyTerminalSurface,
@@ -1483,6 +1483,7 @@ function TerminalSidebarGroup({
   onCloseTerminal: (terminalId: string) => void;
 }) {
   const gt = useGT();
+  const closeOnLeft = isMacPlatform(navigator.platform);
   const isGroupActive = terminalGroup.terminalIds.includes(activeTerminalId);
   const groupActiveTerminalId = isGroupActive
     ? activeTerminalId
@@ -1533,13 +1534,24 @@ function TerminalSidebarGroup({
             <div
               key={terminalId}
               className={cn(
-                "group/tab flex h-6 w-full items-center gap-1 rounded-md pr-1 pl-1.5 text-xs",
+                "group/tab flex h-6 w-full items-center rounded-md pl-1.5 text-xs",
+                closeOnLeft ? "gap-0.5 pr-2" : "gap-1 pr-1",
                 isActive
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
               )}
             >
-              <TerminalSquare className="size-3 shrink-0" />
+              {closeOnLeft && canOperateTerminal ? (
+                <PanelTabCloseButton
+                  label={closeTerminalLabel}
+                  onClick={() => onCloseTerminal(terminalId)}
+                  tooltip={closeTerminalLabel}
+                >
+                  <TerminalSquare className="size-3 shrink-0" />
+                </PanelTabCloseButton>
+              ) : (
+                <TerminalSquare className="size-3 shrink-0" />
+              )}
               <button
                 type="button"
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
@@ -1547,7 +1559,7 @@ function TerminalSidebarGroup({
               >
                 <span className="truncate">{terminalLabel}</span>
               </button>
-              {canOperateTerminal ? (
+              {!closeOnLeft && canOperateTerminal ? (
                 <PanelTabCloseButton
                   active={isActive}
                   label={closeTerminalLabel}

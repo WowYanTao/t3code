@@ -315,6 +315,74 @@ describe("v2 thread shell lists", () => {
     registry.dispose();
   });
 
+  it("rolls running child side chat and subagent status up to parent thread shells", () => {
+    const { registry, threads, snapshotAtom } = makeHarness();
+    const root = { ...v2ThreadShell, status: "idle" as const, activityRunStatus: null };
+    const sideChat = {
+      ...v2ThreadShell,
+      id: ThreadId.make("running-side-chat"),
+      status: "running" as const,
+      activityRunStatus: "running" as const,
+      lineage: {
+        ...v2ThreadShell.lineage,
+        rootThreadId: root.id,
+        parentThreadId: root.id,
+        relationshipToParent: "fork" as const,
+        sideChat: true,
+      },
+    };
+    const nestedSubagent = {
+      ...v2ThreadShell,
+      id: ThreadId.make("running-nested-subagent"),
+      status: "running" as const,
+      activityRunStatus: "running" as const,
+      lineage: {
+        ...v2ThreadShell.lineage,
+        rootThreadId: root.id,
+        parentThreadId: sideChat.id,
+        relationshipToParent: "subagent" as const,
+        sideChat: false,
+      },
+    };
+    const parentRef = { environmentId, threadId: root.id };
+    const parent = threads.threadShellAtom(parentRef);
+    const quietParent = threads.quietThreadShellAtom(parentRef);
+    const disposeParent = registry.mount(parent);
+    const disposeQuiet = registry.mount(quietParent);
+
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [root, sideChat],
+    });
+    expect(registry.get(parent)?.hasRunningChildThread).toBe(true);
+    expect(registry.get(quietParent)?.hasRunningChildThread).toBe(true);
+
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [
+        root,
+        { ...sideChat, status: "idle" as const, activityRunStatus: null },
+        nestedSubagent,
+      ],
+    });
+    expect(registry.get(parent)?.hasRunningChildThread).toBe(true);
+
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [
+        root,
+        { ...sideChat, status: "idle" as const, activityRunStatus: null },
+        { ...nestedSubagent, status: "idle" as const, activityRunStatus: null },
+      ],
+    });
+    expect(registry.get(parent)?.hasRunningChildThread).toBe(false);
+    expect(registry.get(quietParent)?.hasRunningChildThread).toBe(false);
+
+    disposeQuiet();
+    disposeParent();
+    registry.dispose();
+  });
+
   it("brings a parent back from Working while a nested subagent waits for approval", () => {
     const { registry, threads, snapshotAtom } = makeHarness();
     const child = {

@@ -655,6 +655,7 @@ type ThreadStatusInput = Pick<
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "pendingSubagentRequest"
+  | "hasRunningChildThread"
   | "pendingGuestMessageCount"
   | "interactionMode"
   | "latestRun"
@@ -956,6 +957,7 @@ type SidebarThreadStatusInput = Pick<
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "pendingSubagentRequest"
+  | "hasRunningChildThread"
   | "pendingGuestMessageCount"
   | "runtime"
   | "blockedOnThreadWait"
@@ -979,8 +981,9 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "preparing";
   }
   if (
-    thread.runtime !== null &&
-    ["queued", "starting", "running", "waiting"].includes(thread.runtime.status)
+    (thread.runtime !== null &&
+      ["queued", "starting", "running", "waiting"].includes(thread.runtime.status)) ||
+    thread.hasRunningChildThread === true
   ) {
     return "working";
   }
@@ -1514,7 +1517,8 @@ export function resolveThreadStatusPill(input: {
 
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait !== true) ||
-    thread.runtime?.status === "waiting"
+    thread.runtime?.status === "waiting" ||
+    thread.hasRunningChildThread === true
   ) {
     return {
       label: msg("Working"),

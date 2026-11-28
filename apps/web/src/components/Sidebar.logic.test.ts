@@ -2094,6 +2094,15 @@ describe("partitionSidebarAttentionThreads", () => {
     expect(manualTodoOnly.runningThreads).toEqual([]);
     expect(manualTodoOnly.todoThreads.map((t) => t.key)).toEqual(["quiet"]);
     expect(manualTodoOnly.dot).toBe("attention");
+
+    const runningChild = { key: "running-child", ...base, hasRunningChildThread: true };
+    const withRunningChild = partitionSidebarAttentionThreads({
+      threads: [runningChild, quietIdle],
+      getThreadKey: (thread) => thread.key,
+    });
+    expect(withRunningChild.runningThreads.map((t) => t.key)).toEqual(["running-child"]);
+    expect(withRunningChild.todoThreads).toEqual([]);
+    expect(withRunningChild.dot).toBe("working");
   });
 });
 

@@ -1935,7 +1935,7 @@ describe("DesktopWindow", () => {
         ];
         const [shortcutPath, operation, options] = call;
         assert.match(shortcutPath, /Start Menu[\\/]Programs[\\/]Tao Code\.lnk$/);
-        assert.equal(operation, "replace");
+        assert.equal(operation, "create");
         assert.equal(options.icon, icoPath);
         assert.equal(options.iconIndex, 0);
         assert.equal(options.appUserModelId, "com.taocode.desktop");

@@ -220,7 +220,8 @@ function syncUnpackagedWindowsStartMenuShortcut(
   const mainEntryPath = environment.path.join(environment.dirname, "main.cjs");
   const shortcutPath = environment.path.join(startMenuProgramsDir, "Tao Code.lnk");
   try {
-    Electron.shell.writeShortcutLink(shortcutPath, "replace", {
+    // "create" maps to SHORTCUT_CREATE_ALWAYS (creates if missing, overwrites if existing).
+    Electron.shell.writeShortcutLink(shortcutPath, "create", {
       target: process.execPath,
       args: `"${mainEntryPath}"`,
       cwd: environment.rootDir,
